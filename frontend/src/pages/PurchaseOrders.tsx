@@ -30,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import {
   Table,
   TableBody,
@@ -223,14 +224,15 @@ function StatusBadge({ status, onClick }: { status: POStatus; onClick?: () => vo
 export function PurchaseOrdersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("all");
-  const [activePoTab, setActivePoTab] = useState<"register" | "draft-ai">("register");
+  const [activePoTab, setActivePoTab] = useState<"Recomended PO" | "draft-ai" | "history">("Recomended PO");
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedSummaryPO, setSelectedSummaryPO] = useState<PurchaseOrder | null>(null);
   const [isManualDialogOpen, setIsManualDialogOpen] = useState(false);
   const [manualSupplierId, setManualSupplierId] = useState("");
+  const [manualMedicineSearch, setManualMedicineSearch] = useState("");
   const [manualPoNumber, setManualPoNumber] = useState("");
-  const [manualItems, setManualItems] = useState<ManualPoLineItem[]>([createManualPoLineItem()]);
+  const [manualItems, setManualItems] = useState<ManualPoLineItem[]>([]);
 
   const { data: orders = [], isLoading, isError } = usePurchaseOrders();
   const { data: medicines = [] } = useMedicines();
@@ -318,10 +320,18 @@ export function PurchaseOrdersPage() {
     return mappedOrders.filter((po) => {
       const matchesStatus = statusFilter === "all" || po.status === statusFilter;
       const matchesQuery =
-        !q || po.poNumber.toLowerCase().includes(q) || po.supplier.toLowerCase().includes(q);
+        !q ||
+        po.poNumber.toLowerCase().includes(q) ||
+        po.supplier.toLowerCase().includes(q) ||
+        po.items.some((item) => item.name.toLowerCase().includes(q));
       return matchesStatus && matchesQuery;
     });
   }, [mappedOrders, searchQuery, statusFilter]);
+
+  const filteredHistoryOrders = useMemo(
+    () => filteredOrders.filter((po) => po.status !== "Draft AI"),
+    [filteredOrders],
+  );
 
   const kpiDraftAi = useMemo(
     () => mappedOrders.filter((o) => o.status === "Draft AI").length,
@@ -353,6 +363,39 @@ export function PurchaseOrdersPage() {
       return String(sid) === manualSupplierId;
     });
   }, [manualSupplierId, medicines]);
+
+  const supplierComboboxOptions = useMemo<ComboboxOption[]>(() => {
+    return suppliers.map((supplier) => ({
+      value: String(supplier.id),
+      label: supplier.name,
+    }));
+  }, [suppliers]);
+
+  const filteredManualMedicines = useMemo(() => {
+    if (!manualSupplierId) return [];
+    const query = manualMedicineSearch.trim().toLowerCase();
+    return manualMedicines.filter((medicine) => {
+      const name = medicine.name?.toLowerCase() ?? "";
+      const sku = ((medicine as any).sku_code ?? (medicine as any).skuCode ?? "").toLowerCase();
+      return !query || name.includes(query) || sku.includes(query);
+    });
+  }, [manualMedicineSearch, manualMedicines, manualSupplierId]);
+
+  // Debug logs to help trace why medicines may not appear in the UI
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line no-console
+      console.debug("PO Dialog Debug:", {
+        manualSupplierId,
+        manualMedicineSearch,
+        manualMedicinesCount: manualMedicines.length,
+        filteredCount: filteredManualMedicines.length,
+        manualItemsCount: manualItems.length,
+      });
+    } catch (e) {
+      /* ignore */
+    }
+  }, [manualSupplierId, manualMedicineSearch, manualMedicines, filteredManualMedicines, manualItems]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -454,7 +497,7 @@ export function PurchaseOrdersPage() {
 
   function openReview(po: PurchaseOrder) {
     setSelectedPO(po);
-    setActivePoTab("register");
+    setActivePoTab("Recomended PO");
     setIsDialogOpen(true);
     toast.success(`Opened ${po.poNumber} for review.`);
   }
@@ -484,46 +527,43 @@ export function PurchaseOrdersPage() {
   }
 
   function handleCreateManualPo() {
-    const initialSupplier = suppliers[0] ?? null;
-    const initialMedicine = initialSupplier
-      ? (medicines.find((medicine) => medicine.supplier_id === initialSupplier.id) ?? null)
-      : (medicines[0] ?? null);
-
-    setManualSupplierId(
-      initialMedicine
-        ? String(initialMedicine.supplier_id)
-        : initialSupplier
-          ? String(initialSupplier.id)
-          : "",
-    );
-    setManualItems([
-      createManualPoLineItem(
-        initialMedicine
-          ? { medicineId: String(initialMedicine.id), orderQuantity: "1" }
-          : undefined,
-      ),
-    ]);
-    setManualPoNumber("");
-    setIsManualDialogOpen(true);
+    // Open manual PO dialog without pre-selecting supplier or medicines.
+    setManualSupplierId("");
+    setManualMedicineSearch("");
+    setManualItems([]);
+    // Use the dialog open handler to pref fill a PO number
+    handleManualDialogOpenChange(true);
   }
 
   function handleManualDialogOpenChange(open: boolean) {
     setIsManualDialogOpen(open);
     if (!open) {
       setManualSupplierId("");
+      setManualMedicineSearch("");
       setManualPoNumber("");
-      setManualItems([createManualPoLineItem()]);
+      setManualItems([]);
+    } else {
+      // Prefill a sensible PO number when opening the manual PO dialog
+      const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+      setManualPoNumber(`PO-MANUAL-${datePart}-${rand}`);
     }
   }
 
   function handleManualSupplierChange(value: string) {
     setManualSupplierId(value);
-    setManualItems((current) =>
-      current.map((item) => ({
-        ...item,
-        medicineId: "",
-      })),
-    );
+    setManualMedicineSearch("");
+    setManualItems([]);
+  }
+
+  function addMedicineByValue(medicineValue: string) {
+    if (!medicineValue) return;
+    const exists = manualItems.some((it) => it.medicineId === medicineValue);
+    if (exists) return;
+    setManualItems((current) => [
+      ...current,
+      createManualPoLineItem({ medicineId: medicineValue, orderQuantity: "1" }),
+    ]);
   }
 
   function handleManualItemChange(
@@ -541,10 +581,7 @@ export function PurchaseOrdersPage() {
   }
 
   function handleRemoveManualItem(itemId: string) {
-    setManualItems((current) => {
-      if (current.length === 1) return [createManualPoLineItem()];
-      return current.filter((item) => item.id !== itemId);
-    });
+    setManualItems((current) => current.filter((item) => item.id !== itemId));
   }
 
   function handleSubmitManualPo() {
@@ -564,8 +601,8 @@ export function PurchaseOrdersPage() {
           item.medicine_id && Number.isFinite(item.order_quantity) && item.order_quantity > 0,
       );
 
-    if (items.length !== manualItems.length || items.length === 0) {
-      toast.error("Complete every PO item before creating the order.");
+    if (items.length === 0) {
+      toast.error("Please add at least one medicine before creating the PO.");
       return;
     }
 
@@ -690,13 +727,13 @@ export function PurchaseOrdersPage() {
         <CardContent className="p-0">
           <Tabs
             value={activePoTab}
-            onValueChange={(value) => setActivePoTab(value as "register" | "draft-ai")}
+            onValueChange={(value) => setActivePoTab(value as "Recomended PO" | "draft-ai" | "history")}
             className="w-full"
           >
             <div className="border-b border-border px-4 py-3">
-              <TabsList className="grid w-fit grid-cols-2 bg-muted/40">
-                <TabsTrigger value="register" className="gap-2">
-                  Register
+              <TabsList className="grid w-fit grid-cols-3 bg-muted/40">
+                <TabsTrigger value="Recomended PO" className="gap-2">
+                  Recomended PO
                 </TabsTrigger>
                 <TabsTrigger value="draft-ai" className="gap-2">
                   Draft AI
@@ -704,10 +741,13 @@ export function PurchaseOrdersPage() {
                     {kpiDraftAi}
                   </span>
                 </TabsTrigger>
+                <TabsTrigger value="history" className="gap-2">
+                  History
+                </TabsTrigger>
               </TabsList>
             </div>
 
-            <TabsContent value="register" className="m-0">
+            <TabsContent value="Recomended PO" className="m-0">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -735,9 +775,9 @@ export function PurchaseOrdersPage() {
                   <TableBody>
                     {isLoading ? (
                       Array.from({ length: 5 }).map((_, i) => (
-                        <TableRow key={i}>
+                        <TableRow key={`skeleton-row-${i}`}>
                           {["pl-6", "", "", "text-right", "", "pr-6 text-right"].map((cls, j) => (
-                            <TableCell key={j} className={cls}>
+                            <TableCell key={`skeleton-cell-${i}-${j}`} className={cls}>
                               <Skeleton className="h-4 w-full" />
                             </TableCell>
                           ))}
@@ -760,7 +800,7 @@ export function PurchaseOrdersPage() {
                       </TableRow>
                     ) : (
                       filteredOrders.map((po) => (
-                        <TableRow key={po.poNumber} className="border-border">
+                        <TableRow key={`${po.poNumber}-${po.date}`} className="border-border">
                           <TableCell className="pl-6 font-mono text-xs font-medium text-foreground">
                             {po.poNumber}
                           </TableCell>
@@ -804,6 +844,98 @@ export function PurchaseOrdersPage() {
               </div>
             </TabsContent>
 
+            <TabsContent value="history" className="m-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-border hover:bg-transparent">
+                      <TableHead className="pl-6 font-semibold text-foreground whitespace-nowrap">
+                        PO Number
+                      </TableHead>
+                      <TableHead className="font-semibold text-foreground whitespace-nowrap">
+                        Date
+                      </TableHead>
+                      <TableHead className="font-semibold text-foreground whitespace-nowrap">
+                        Supplier
+                      </TableHead>
+                      <TableHead className="text-right font-semibold text-foreground whitespace-nowrap">
+                        Total Items
+                      </TableHead>
+                      <TableHead className="font-semibold text-foreground whitespace-nowrap">
+                        Status
+                      </TableHead>
+                      <TableHead className="pr-6 text-right font-semibold text-foreground whitespace-nowrap">
+                        Actions
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoading ? (
+                      Array.from({ length: 5 }).map((_, i) => (
+                        <TableRow key={`history-skeleton-row-${i}`}>
+                          {['pl-6', '', '', 'text-right', '', 'pr-6 text-right'].map((cls, j) => (
+                            <TableCell key={`history-skeleton-cell-${i}-${j}`} className={cls}>
+                              <Skeleton className="h-4 w-full" />
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))
+                    ) : isError ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={6}
+                          className="py-12 text-center text-destructive text-sm"
+                        >
+                          Failed to load purchase orders. Check server connection.
+                        </TableCell>
+                      </TableRow>
+                    ) : filteredHistoryOrders.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
+                          No historical purchase orders match your filters.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredHistoryOrders.map((po) => (
+                        <TableRow key={`${po.poNumber}-${po.date}`} className="border-border">
+                          <TableCell className="pl-6 font-mono text-xs font-medium text-foreground">
+                            {po.poNumber}
+                          </TableCell>
+                          <TableCell className="tabular-nums text-muted-foreground">
+                            {formatDisplayDate(po.date)}
+                          </TableCell>
+                          <TableCell
+                            className="max-w-[220px] truncate font-medium text-foreground"
+                            title={po.supplier}
+                          >
+                            {po.supplier}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {lineItemCount(po)}
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge status={po.status} />
+                          </TableCell>
+                          <TableCell className="pr-6 text-right">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="gap-1.5 text-muted-foreground hover:text-foreground"
+                              onClick={() => openReview(po)}
+                            >
+                              <Eye className="h-4 w-4" />
+                              Review
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </TabsContent>
+
             <TabsContent value="draft-ai" className="m-0 p-4 pt-4">
               <div className="space-y-4">
                 <div className="rounded-lg border border-violet-200 bg-violet-50/70 p-4 shadow-sm">
@@ -814,8 +946,7 @@ export function PurchaseOrdersPage() {
                         Draft AI manager tab
                       </div>
                       <p className="mt-1 text-sm text-violet-900/80">
-                        Review the draft data, AI rationale, and safety-stock signal before
-                        approving or rejecting.
+                        Review the draft data, AI rationale, and safety-stock signal before approving or rejecting.
                       </p>
                     </div>
                     {selectedSummaryPO ? (
@@ -833,24 +964,17 @@ export function PurchaseOrdersPage() {
                   {selectedSummaryPO ? (
                     <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
                       <div className="rounded-lg border border-violet-200 bg-white/80 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
-                          Selected draft
-                        </p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Selected draft</p>
                         <div className="mt-2 space-y-2 text-sm text-foreground">
-                          <p className="font-mono text-xs text-muted-foreground">
-                            {selectedSummaryPO.poNumber}
+                          <p className="font-mono text-xs text-muted-foreground">{selectedSummaryPO.poNumber}</p>
+                          <p>
+                            <span className="font-medium">Supplier:</span> {selectedSummaryPO.supplier}
                           </p>
                           <p>
-                            <span className="font-medium">Supplier:</span>{" "}
-                            {selectedSummaryPO.supplier}
+                            <span className="font-medium">Date:</span> {formatDisplayDate(selectedSummaryPO.date)}
                           </p>
                           <p>
-                            <span className="font-medium">Date:</span>{" "}
-                            {formatDisplayDate(selectedSummaryPO.date)}
-                          </p>
-                          <p>
-                            <span className="font-medium">Total items:</span>{" "}
-                            {lineItemCount(selectedSummaryPO)}
+                            <span className="font-medium">Total items:</span> {lineItemCount(selectedSummaryPO)}
                           </p>
                           <div className="pt-1">
                             <StatusBadge status={selectedSummaryPO.status} />
@@ -860,15 +984,11 @@ export function PurchaseOrdersPage() {
 
                       {selectedDraftAiReason ? (
                         <div className="rounded-lg border border-violet-200 bg-white/80 p-4">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
-                            Inspection reason
-                          </p>
-                          <p className="mt-2 text-sm text-violet-950">
-                            {selectedDraftAiReason.summary}
-                          </p>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Inspection reason</p>
+                          <p className="mt-2 text-sm text-violet-950">{selectedDraftAiReason.summary}</p>
                           <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-violet-900/80">
-                            {selectedDraftAiReason.factors.map((factor) => (
-                              <li key={factor}>{factor}</li>
+                            {selectedDraftAiReason.factors.map((factor, idx) => (
+                              <li key={`draft-reason-${idx}`}>{factor}</li>
                             ))}
                           </ul>
                         </div>
@@ -939,147 +1059,179 @@ export function PurchaseOrdersPage() {
       </Card>
 
       <Dialog open={isManualDialogOpen} onOpenChange={handleManualDialogOpenChange}>
-        <DialogContent className="border-border-strong bg-background sm:max-w-lg">
+        <DialogContent className="border-border-strong bg-background sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Create Manual PO</DialogTitle>
             <DialogDescription>
               Select a supplier and add one or more medicines to create a draft purchase order.
             </DialogDescription>
           </DialogHeader>
+
           <div className="space-y-4">
+            {/*Supplier Selection */}
             <div className="grid gap-2">
-              <label className="text-sm font-medium text-foreground">Supplier</label>
-              <Select value={manualSupplierId} onValueChange={handleManualSupplierChange}>
-                <SelectTrigger className="bg-background border-border">
-                  <SelectValue placeholder="Select supplier" />
-                </SelectTrigger>
-                <SelectContent>
-                  {suppliers.map((supplier) => (
-                    <SelectItem key={supplier.id} value={String(supplier.id)}>
-                      {supplier.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {selectedSupplier
-                  ? `Medicines are filtered to ${selectedSupplier.name} for this PO.`
-                  : "Choose a supplier first, then add one or more medicines."}
-              </p>
-              {/* Create medicine moved to Suppliers page */}
+              <label className="text-sm font-medium text-foreground">Select Supplier *</label>
+              <Combobox
+                options={supplierComboboxOptions}
+                value={manualSupplierId}
+                onValueChange={handleManualSupplierChange}
+                placeholder="Type to search supplier..."
+                searchPlaceholder="Search supplier..."
+                emptyMessage="No supplier found."
+                showAllOnEmptySearch={false}
+              />
             </div>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-foreground">PO items</p>
-                  <p className="text-xs text-muted-foreground">
-                    Each item can have its own quantity and price estimate.
-                  </p>
-                </div>
-                <Button type="button" variant="outline" size="sm" onClick={handleAddManualItem}>
-                  <Plus className="h-4 w-4" />
-                  Add item
-                </Button>
-              </div>
 
-              <div className="space-y-3">
-                {manualItems.map((item, index) => (
-                  <div key={item.id} className="rounded-lg border border-border bg-muted/20 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium text-foreground">Item {index + 1}</p>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveManualItem(item.id)}
-                        className="gap-1 text-muted-foreground"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Remove
-                      </Button>
-                    </div>
-
-                    <div className="mt-3 grid gap-2">
-                      <label className="text-sm font-medium text-foreground">Medicine</label>
-                      <Select
-                        value={item.medicineId}
-                        onValueChange={(value) =>
-                          handleManualItemChange(item.id, "medicineId", value)
-                        }
-                      >
-                        <SelectTrigger className="bg-background border-border">
-                          <SelectValue
-                            placeholder={
-                              manualSupplierId
-                                ? "Select medicine from this supplier"
-                                : "Select supplier first"
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {manualMedicines.length === 0 ? (
-                            <div className="p-3 text-sm text-muted-foreground">
-                              {manualSupplierId
-                                ? "No medicines found for this supplier."
-                                : "Select a supplier first to choose medicines."}
-                            </div>
-                          ) : (
-                            manualMedicines.map((medicine) => (
-                              <SelectItem key={medicine.id} value={String(medicine.id)}>
-                                {medicine.name} ({medicine.sku_code})
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      <div className="grid gap-2">
-                        <label className="text-sm font-medium text-foreground">Quantity</label>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={item.orderQuantity}
-                          onChange={(e) =>
-                            handleManualItemChange(item.id, "orderQuantity", e.target.value)
-                          }
-                          className="bg-background border-border"
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <label className="text-sm font-medium text-foreground">
-                          Unit price estimate
-                        </label>
-                        <Input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={item.unitPriceEstimate}
-                          onChange={(e) =>
-                            handleManualItemChange(item.id, "unitPriceEstimate", e.target.value)
-                          }
-                          placeholder="Optional"
-                          className="bg-background border-border"
-                        />
-                      </div>
-                    </div>
+            {/*Medicine Search */}
+            <div className="border-t border-border pt-4">
+              {manualSupplierId ? (
+                <div className="grid gap-2">
+                  <div className="flex items-end justify-between gap-4">
+                    <p className="text-sm font-medium text-foreground">Search Medicine</p>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setManualItems([])}>
+                      Clear selected
+                    </Button>
                   </div>
-                ))}
-              </div>
 
-              <div className="grid gap-2">
-                <label className="text-sm font-medium text-foreground">PO Number</label>
-                <Input
-                  value={manualPoNumber}
-                  onChange={(e) => setManualPoNumber(e.target.value)}
-                  placeholder="Optional"
-                  className="bg-background border-border"
-                />
-              </div>
+                  <div className="relative">
+                    <Input
+                      value={manualMedicineSearch}
+                      onChange={(e) => setManualMedicineSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          if (filteredManualMedicines.length > 0) {
+                            addMedicineByValue(String(filteredManualMedicines[0].id));
+                          } else {
+                            toast.info("No matching medicine to add.");
+                          }
+                        }
+                      }}
+                      placeholder={`Type medicine name or SKU available medicines from ${selectedSupplier?.name}.`}
+                      className="bg-background border-border"
+                    />
+
+                    {manualMedicineSearch.trim().length > 0 && (
+                      <div className="absolute left-0 right-0 z-20 mt-2 max-h-64 overflow-y-auto rounded-md border border-border bg-background shadow-xl">
+                        {filteredManualMedicines.length > 0 ? (
+                          filteredManualMedicines.map((medicine) => {
+                            const medId = String(medicine.id);
+                            const alreadyAdded = manualItems.some((item) => item.medicineId === medId);
+                            return (
+                              <button
+                                key={`med-${medId}`}
+                                type="button"
+                                className={
+                                  "w-full rounded-md border-b border-border p-3 text-left" +
+                                  (alreadyAdded
+                                    ? " bg-muted/40 text-muted-foreground"
+                                    : " bg-background hover:border-primary hover:bg-muted/50")
+                                }
+                                onClick={() => {
+                                  if (alreadyAdded) return;
+                                  setManualItems((current) => [
+                                    ...current,
+                                    createManualPoLineItem({
+                                      medicineId: medId,
+                                      orderQuantity: "1",
+                                    }),
+                                  ]);
+                                }}
+                                disabled={alreadyAdded}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div>
+                                    <p className="text-sm font-medium text-foreground">{medicine.name}</p>
+                                    {((medicine as any).sku_code || (medicine as any).skuCode) && (
+                                      <p className="text-xs text-muted-foreground">SKU: {(medicine as any).sku_code ?? (medicine as any).skuCode}</p>
+                                    )}
+                                  </div>
+                                  {alreadyAdded ? (
+                                    <span className="text-xs text-success">Added</span>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">Tap to add</span>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div className="rounded-b-md border-t border-border p-4 text-sm text-muted-foreground">
+                            No medicines match your search.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {`Available: ${manualMedicines.length}`}
+                  </p>
+
+                  <div className="mt-4 border-t border-border pt-4">
+                    <div className="mb-3">
+                      <p className="text-sm font-medium text-foreground">Selected Medicines ({manualItems.length})</p>
+                    </div>
+
+                    {manualItems.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                        Pick medicines from the list above to add them to the PO.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {manualItems.map((item) => {
+                          const medicine = medicines.find((m) => String(m.id) === item.medicineId);
+                          return (
+                            <div key={item.id} className="flex items-center gap-3 p-3 rounded-md border border-border bg-muted/30">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-foreground truncate">{medicine?.name || `Medicine #${item.medicineId}`}</p>
+                                {(medicine as any)?.sku_code && (
+                                  <p className="text-xs text-muted-foreground">SKU: {(medicine as any).sku_code}</p>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <div className="flex items-center gap-1 bg-background rounded-md border border-border p-1">
+                                  <label className="text-xs text-muted-foreground px-1">Qty:</label>
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    value={item.orderQuantity}
+                                    onChange={(e) => handleManualItemChange(item.id, "orderQuantity", e.target.value)}
+                                    className="w-14 h-7 border-0 bg-background text-sm text-center"
+                                  />
+                                </div>
+
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRemoveManualItem(item.id)}
+                                  className="h-7 px-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                  title="Remove from PO"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* PO Number Optional */}
+                  <div className="grid gap-2 mt-4">
+                    <label className="text-xs font-medium text-muted-foreground">PO Number (optional)</label>
+                    <Input value={manualPoNumber} onChange={(e) => setManualPoNumber(e.target.value)} placeholder="e.g., PO-2026-001" className="bg-background border-border h-9 text-sm" />
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">Please select a supplier first to search medicines.</div>
+              )}
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:justify-end">
+
+          <DialogFooter className="gap-2 sm:justify-end pt-4">
             <Button
               type="button"
               variant="outline"
@@ -1096,8 +1248,19 @@ export function PurchaseOrdersPage() {
                 manualItems.length === 0 ||
                 manualItems.some((item) => !item.medicineId || Number(item.orderQuantity) < 1)
               }
+              className="gap-2"
             >
-              {createManualPo.isPending ? "Creating…" : "Create PO"}
+              {createManualPo.isPending ? (
+                <>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Creating…
+                </>
+              ) : (
+                <>
+                  <ShoppingCart className="h-4 w-4" />
+                  Create PO
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
