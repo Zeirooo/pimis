@@ -4,6 +4,7 @@ import {
   Bot,
   CheckCircle2,
   ClipboardList,
+  Edit3,
   Eye,
   FileClock,
   Plus,
@@ -56,7 +57,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { PurchaseOrderResponse } from "@/types/api.types";
 import type { Supplier } from "@/types/api.types";
 
-export type POStatus = "Draft AI" | "Pending" | "Approved" | "Completed";
+export type POStatus = "Pending AI" | "Rejected" | "Approved" | "Completed";
 
 export type POItem = {
   name: string;
@@ -91,7 +92,7 @@ function createManualPoLineItem(overrides?: Partial<ManualPoLineItem>): ManualPo
   };
 }
 
-const STATUS_FILTER_VALUES = ["all", "Draft AI", "Pending", "Approved", "Completed"] as const;
+const STATUS_FILTER_VALUES = ["all", "Pending AI", "Rejected", "Approved", "Completed"] as const;
 type StatusFilterValue = (typeof STATUS_FILTER_VALUES)[number];
 
 const INITIAL_ORDERS: PurchaseOrder[] = [
@@ -99,14 +100,14 @@ const INITIAL_ORDERS: PurchaseOrder[] = [
     poNumber: "PO-AI-20260401",
     date: "2026-04-01",
     supplier: "PT Kimia Farma",
-    status: "Draft AI",
+    status: "Pending AI",
     items: [{ name: "Paracetamol 500mg", qty: 150 }],
   },
   {
     poNumber: "PO-2026-0142",
     date: "2026-03-28",
     supplier: "PT Dexa Medica",
-    status: "Pending",
+    status: "Rejected",
     items: [
       { name: "Amoxicillin 500mg", qty: 80 },
       { name: "Ceftriaxone 1g", qty: 24 },
@@ -139,7 +140,7 @@ const INITIAL_ORDERS: PurchaseOrder[] = [
     poNumber: "PO-2026-0188",
     date: "2026-04-02",
     supplier: "PT Indofarma",
-    status: "Pending",
+    status: "Rejected",
     items: [
       { name: "Insulin Glargine 100IU", qty: 40 },
       { name: "Salbutamol Inhaler", qty: 35 },
@@ -149,9 +150,9 @@ const INITIAL_ORDERS: PurchaseOrder[] = [
 
 function mapApiPOToLocal(po: PurchaseOrderResponse, supplierNameById: Map<number, string>) {
   const statusMap: Record<string, POStatus> = {
-    DRAFT_AI: "Draft AI",
+    DRAFT_AI: "Pending AI",
     APPROVED: "Approved",
-    REJECTED: "Pending",
+    REJECTED: "Rejected",
     SENT_TO_VENDOR: "Approved",
     COMPLETED: "Completed",
   };
@@ -159,7 +160,7 @@ function mapApiPOToLocal(po: PurchaseOrderResponse, supplierNameById: Map<number
     poNumber: po.po_number,
     date: po.created_at.split("T")[0],
     supplier: supplierNameById.get(po.supplier_id) ?? `Supplier #${po.supplier_id}`,
-    status: statusMap[po.status] ?? "Pending",
+    status: statusMap[po.status] ?? "Rejected",
     items: po.items.map((item) => ({
       name: `Medicine #${item.medicine_id}`,
       qty: item.order_quantity,
@@ -170,7 +171,7 @@ function mapApiPOToLocal(po: PurchaseOrderResponse, supplierNameById: Map<number
 }
 
 function lineItemCount(po: PurchaseOrder): number {
-  return po.items.length;
+  return po.items.reduce((sum, item) => sum + item.qty, 0);
 }
 
 function formatDisplayDate(isoDate: string): string {
@@ -185,9 +186,9 @@ function formatDisplayDate(isoDate: string): string {
 
 function StatusBadge({ status, onClick }: { status: POStatus; onClick?: () => void }) {
   const styles: Record<POStatus, string> = {
-    "Draft AI":
+    "Pending AI":
       "border border-violet-500/35 bg-violet-500/12 text-violet-800 shadow-none hover:bg-violet-500/15 dark:text-violet-200",
-    Pending:
+    "Rejected":
       "border border-amber-500/35 bg-amber-500/12 text-amber-900 shadow-none hover:bg-amber-500/15 dark:text-amber-100",
     Approved:
       "border border-sky-500/35 bg-sky-500/12 text-sky-900 shadow-none hover:bg-sky-500/15 dark:text-sky-100",
@@ -200,7 +201,7 @@ function StatusBadge({ status, onClick }: { status: POStatus; onClick?: () => vo
       className={`rounded-md font-medium ${styles[status]} ${onClick ? "cursor-pointer" : ""}`}
       variant="outline"
     >
-      {status === "Draft AI" && <Bot className="mr-1 h-3 w-3 opacity-80" aria-hidden />}
+      {status === "Pending AI" && <Bot className="mr-1 h-3 w-3 opacity-80" aria-hidden />}
       {status}
     </Badge>
   );
@@ -213,7 +214,7 @@ function StatusBadge({ status, onClick }: { status: POStatus; onClick?: () => vo
       className="inline-flex rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       onClick={onClick}
       aria-label={
-        status === "Draft AI" ? "Open draft AI summary" : `Open ${status} purchase order review`
+        status === "Pending AI" ? "Open pending AI summary" : `Open ${status} purchase order review`
       }
     >
       {badge}
@@ -227,6 +228,8 @@ export function PurchaseOrdersPage() {
   const [activePoTab, setActivePoTab] = useState<"Recomended PO" | "draft-ai" | "history">("Recomended PO");
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editItems, setEditItems] = useState<PurchaseOrder["items"]>([]);
   const [selectedSummaryPO, setSelectedSummaryPO] = useState<PurchaseOrder | null>(null);
   const [isManualDialogOpen, setIsManualDialogOpen] = useState(false);
   const [manualSupplierId, setManualSupplierId] = useState("");
@@ -267,14 +270,14 @@ export function PurchaseOrdersPage() {
   );
 
   const draftAiOrders = useMemo(
-    () => mappedOrders.filter((po) => po.status === "Draft AI"),
+    () => mappedOrders.filter((po) => po.status === "Pending AI"),
     [mappedOrders],
   );
 
   const draftAiRows = useMemo(() => draftAiOrders.map((po) => ({ po })), [draftAiOrders]);
 
   const buildDraftAiReason = (po: PurchaseOrder) => {
-    if (po.status !== "Draft AI") return null;
+    if (po.status !== "Pending AI") return null;
 
     const firstItem = po.items[0];
     if (!firstItem) {
@@ -329,16 +332,16 @@ export function PurchaseOrdersPage() {
   }, [mappedOrders, searchQuery, statusFilter]);
 
   const filteredHistoryOrders = useMemo(
-    () => filteredOrders.filter((po) => po.status !== "Draft AI"),
+    () => filteredOrders.filter((po) => po.status !== "Pending AI"),
     [filteredOrders],
   );
 
   const kpiDraftAi = useMemo(
-    () => mappedOrders.filter((o) => o.status === "Draft AI").length,
+    () => mappedOrders.filter((o) => o.status === "Pending AI").length,
     [mappedOrders],
   );
   const kpiPending = useMemo(
-    () => mappedOrders.filter((o) => o.status === "Pending").length,
+    () => mappedOrders.filter((o) => o.status === "Rejected").length,
     [mappedOrders],
   );
   const kpiApproved = useMemo(
@@ -431,7 +434,7 @@ export function PurchaseOrdersPage() {
     const draftOrder = mappedOrders.find((po) => po._rawId === Number(draftPoId));
     if (!draftOrder) return;
 
-    setStatusFilter("Draft AI");
+    setStatusFilter("Pending AI");
     setSelectedPO(null);
     setIsDialogOpen(false);
     setSelectedSummaryPO(draftOrder);
@@ -500,6 +503,57 @@ export function PurchaseOrdersPage() {
     setActivePoTab("Recomended PO");
     setIsDialogOpen(true);
     toast.success(`Opened ${po.poNumber} for review.`);
+  }
+
+  function openEdit(po: PurchaseOrder) {
+    setSelectedPO(po);
+    setEditItems(po.items);
+    setIsDialogOpen(false);
+    setIsEditDialogOpen(true);
+  }
+
+  function handleEditDialogOpenChange(open: boolean) {
+    setIsEditDialogOpen(open);
+    if (!open) {
+      setSelectedPO(null);
+      setEditItems([]);
+    }
+  }
+
+  function handleSaveEditChanges() {
+    if (!selectedPO) return;
+
+    queryClient.setQueryData<PurchaseOrderResponse[] | undefined>(
+      queryKeys.purchaseOrders,
+      (old) =>
+        old?.map((po) => {
+          if (po.id !== selectedPO._rawId) return po;
+          return {
+            ...po,
+            items: po.items.map((item) => {
+              const editedItem = editItems.find((edited) => edited.medicineId === item.medicine_id);
+              return editedItem
+                ? { ...item, order_quantity: editedItem.qty }
+                : item;
+            }),
+          };
+        }),
+    );
+
+    setSelectedPO((current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map((item) => {
+              const edited = editItems.find((edited) => edited.medicineId === item.medicineId);
+              return edited ? { ...item, qty: edited.qty } : item;
+            }),
+          }
+        : null,
+    );
+
+    toast.success(`Updated ${selectedPO.poNumber}`);
+    handleEditDialogOpenChange(false);
   }
 
   function openDraftAiSummary(po: PurchaseOrder) {
@@ -657,8 +711,8 @@ export function PurchaseOrdersPage() {
               </SelectTrigger>
               <SelectContent className="z-[60]">
                 <SelectItem value="all">All</SelectItem>
-                <SelectItem value="Draft AI">Draft AI</SelectItem>
-                <SelectItem value="Pending">Pending</SelectItem>
+                <SelectItem value="Pending AI">Pending AI</SelectItem>
+                <SelectItem value="Rejected">Rejected</SelectItem>
                 <SelectItem value="Approved">Approved</SelectItem>
                 <SelectItem value="Completed">Completed</SelectItem>
               </SelectContent>
@@ -677,21 +731,21 @@ export function PurchaseOrdersPage() {
 
       <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
-          label="Draft AI (BPMN)"
+          label="Pending AI (BPMN)"
           value={String(kpiDraftAi)}
           subtext="Awaiting pharmacist review"
           icon={Bot}
           tone="neutral"
         />
         <KpiCard
-          label="Pending approval"
+          label="Draft Pending approval"
           value={String(kpiPending)}
           subtext="Finance / clinical queue"
           icon={FileClock}
           tone="warning"
         />
         <KpiCard
-          label="Approved (open)"
+          label="Draft Approved (open)"
           value={String(kpiApproved)}
           subtext="Released to suppliers"
           icon={ClipboardList}
@@ -736,7 +790,7 @@ export function PurchaseOrdersPage() {
                   Recomended PO
                 </TabsTrigger>
                 <TabsTrigger value="draft-ai" className="gap-2">
-                  Draft AI
+                  Pending AI
                   <span className="rounded-full bg-violet-500/12 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
                     {kpiDraftAi}
                   </span>
@@ -820,21 +874,33 @@ export function PurchaseOrdersPage() {
                             <StatusBadge
                               status={po.status}
                               onClick={
-                                po.status === "Draft AI" ? () => openDraftAiSummary(po) : undefined
+                                po.status === "Pending AI" ? () => openDraftAiSummary(po) : undefined
                               }
                             />
                           </TableCell>
                           <TableCell className="pr-6 text-right">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="gap-1.5 text-muted-foreground hover:text-foreground"
-                              onClick={() => openReview(po)}
-                            >
-                              <Eye className="h-4 w-4" />
-                              Review
-                            </Button>
+                            <div className="inline-flex items-center justify-end gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="gap-1.5 text-muted-foreground hover:text-foreground"
+                                onClick={() => openReview(po)}
+                              >
+                                <Eye className="h-4 w-4" />
+                                Review
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5"
+                                onClick={() => openEdit(po)}
+                              >
+                                <Edit3 className="h-4 w-4" />
+                                Edit
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
@@ -917,16 +983,28 @@ export function PurchaseOrdersPage() {
                             <StatusBadge status={po.status} />
                           </TableCell>
                           <TableCell className="pr-6 text-right">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="gap-1.5 text-muted-foreground hover:text-foreground"
-                              onClick={() => openReview(po)}
-                            >
-                              <Eye className="h-4 w-4" />
-                              Review
-                            </Button>
+                            <div className="inline-flex items-center justify-end gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="gap-1.5 text-muted-foreground hover:text-foreground"
+                                onClick={() => openReview(po)}
+                              >
+                                <Eye className="h-4 w-4" />
+                                Review
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5"
+                                onClick={() => openEdit(po)}
+                              >
+                                <Edit3 className="h-4 w-4" />
+                                Edit
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
@@ -943,7 +1021,7 @@ export function PurchaseOrdersPage() {
                     <div>
                       <div className="flex items-center gap-2 text-sm font-semibold text-violet-900">
                         <Bot className="h-4 w-4" />
-                        Draft AI manager tab
+                        Pending AI manager tab
                       </div>
                       <p className="mt-1 text-sm text-violet-900/80">
                         Review the draft data, AI rationale, and safety-stock signal before approving or rejecting.
@@ -996,7 +1074,7 @@ export function PurchaseOrdersPage() {
                     </div>
                   ) : (
                     <div className="mt-4 rounded-lg border border-dashed border-violet-200 bg-white/60 p-4 text-sm text-violet-900/80">
-                      Click a Draft AI badge to inspect a specific draft.
+                      Click a Pending AI badge to inspect a specific draft.
                     </div>
                   )}
                 </div>
@@ -1004,7 +1082,7 @@ export function PurchaseOrdersPage() {
                 <div className="grid gap-3 xl:grid-cols-2">
                   {draftAiRows.length === 0 ? (
                     <div className="rounded-lg border border-border bg-background p-4 text-sm text-muted-foreground xl:col-span-2">
-                      No draft AI purchase orders are available right now.
+                      No Pending AI purchase orders are available right now.
                     </div>
                   ) : (
                     draftAiRows.map(({ po }) => (
@@ -1263,6 +1341,74 @@ export function PurchaseOrdersPage() {
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={handleEditDialogOpenChange}>
+        <DialogContent className="border-border-strong bg-background sm:max-w-lg">
+          {selectedPO ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="font-mono text-base">Edit {selectedPO.poNumber}</DialogTitle>
+                <DialogDescription>
+                  Adjust quantities for the selected purchase order before saving.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+                <p className="text-sm text-muted-foreground">
+                  Supplier: <span className="font-semibold text-foreground">{selectedPO.supplier}</span>
+                </p>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span className="tabular-nums">Order date: {formatDisplayDate(selectedPO.date)}</span>
+                  <span className="text-border">|</span>
+                  <span className="inline-flex items-center gap-2">
+                    Status <StatusBadge status={selectedPO.status} />
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-foreground">Edit line items</h3>
+                <div className="space-y-2">
+                  {editItems.map((item, idx) => (
+                    <div
+                      key={`${selectedPO.poNumber}-edit-${idx}`}
+                      className="flex items-center gap-3 rounded-lg border border-border bg-background p-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground">{item.name}</p>
+                      </div>
+                      <Input
+                        type="number"
+                        value={item.qty}
+                        min={1}
+                        className="w-24"
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          setEditItems((current) =>
+                            current.map((line, lineIndex) =>
+                              lineIndex === idx ? { ...line, qty: Number.isFinite(value) ? value : 0 } : line,
+                            ),
+                          );
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+                <Button type="button" variant="outline" onClick={() => handleEditDialogOpenChange(false)}>
+                  Cancel
+                </Button>
+                <Button type="button" onClick={handleSaveEditChanges}>
+                  Save changes
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <div className="py-6 text-center text-sm text-muted-foreground" aria-live="polite">
+              Select a purchase order to edit.
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
