@@ -766,7 +766,7 @@ export function PurchaseOrdersPage() {
 
       <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
-          label="Pending AI (BPMN)"
+          label="Draft Pending AI"
           value={String(kpiDraftAi)}
           subtext="Awaiting pharmacist review"
           icon={Bot}
