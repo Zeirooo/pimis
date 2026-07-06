@@ -497,59 +497,6 @@ function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-[1.75rem] border border-border/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(236,253,245,0.86))] p-6 shadow-sm">
-        <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr] lg:items-end">
-          <div className="space-y-4">
-            <span className="inline-flex w-fit items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
-              Live pharmacy command center
-            </span>
-            <div className="space-y-2">
-              <h1 className="max-w-3xl text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-                Inventory that flags risk before the stockroom feels it.
-              </h1>
-              <p className="max-w-2xl text-sm text-slate-600">
-                The redesigned dashboard keeps critical medicine coverage, ML demand signals, and
-                restocking worklists in a clearer hierarchy so the first action is obvious.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <span className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm ring-1 ring-slate-200">
-                {totalMedicines.toLocaleString()} medicines
-              </span>
-              <span className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm ring-1 ring-slate-200">
-                {lowStockCount} low stock
-              </span>
-              <span className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm ring-1 ring-slate-200">
-                {criticalCount} critical
-              </span>
-              <span className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm ring-1 ring-slate-200">
-                {medicines[0]?.name ?? "No target medicine yet"}
-              </span>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            <Button
-              type="button"
-              onClick={handleExportInsights}
-              className="h-11 justify-between rounded-2xl px-4 shadow-sm"
-            >
-              <span>Export insights</span>
-              <Download className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11 justify-between rounded-2xl border-border/80 bg-white/70 px-4 shadow-sm hover:bg-white"
-              onClick={handleExportInsights}
-            >
-              <span>Review worklist</span>
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </section>
-
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">{KPI_DATA_LIVE.map(renderKpi)}</div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-12">

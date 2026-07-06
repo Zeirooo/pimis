@@ -234,8 +234,12 @@ export function PurchaseOrdersPage() {
   const [isManualDialogOpen, setIsManualDialogOpen] = useState(false);
   const [manualSupplierId, setManualSupplierId] = useState("");
   const [manualMedicineSearch, setManualMedicineSearch] = useState("");
+  const [isMedicineSuggestionsOpen, setIsMedicineSuggestionsOpen] = useState(false);
   const [manualPoNumber, setManualPoNumber] = useState("");
   const [manualItems, setManualItems] = useState<ManualPoLineItem[]>([]);
+  const [isQuantityDialogOpen, setIsQuantityDialogOpen] = useState(false);
+  const [selectedMedicineForQty, setSelectedMedicineForQty] = useState<any>(null);
+  const [quantityInput, setQuantityInput] = useState("1");
 
   const { data: orders = [], isLoading, isError } = usePurchaseOrders();
   const { data: medicines = [] } = useMedicines();
@@ -383,6 +387,11 @@ export function PurchaseOrdersPage() {
       return !query || name.includes(query) || sku.includes(query);
     });
   }, [manualMedicineSearch, manualMedicines, manualSupplierId]);
+
+  const shouldShowMedicineSuggestions =
+    isMedicineSuggestionsOpen &&
+    manualSupplierId &&
+    manualMedicineSearch.trim().length > 0;
 
   // Debug logs to help trace why medicines may not appear in the UI
   useEffect(() => {
@@ -584,6 +593,7 @@ export function PurchaseOrdersPage() {
     // Open manual PO dialog without pre-selecting supplier or medicines.
     setManualSupplierId("");
     setManualMedicineSearch("");
+    setIsMedicineSuggestionsOpen(false);
     setManualItems([]);
     // Use the dialog open handler to pref fill a PO number
     handleManualDialogOpenChange(true);
@@ -594,6 +604,7 @@ export function PurchaseOrdersPage() {
     if (!open) {
       setManualSupplierId("");
       setManualMedicineSearch("");
+      setIsMedicineSuggestionsOpen(false);
       setManualPoNumber("");
       setManualItems([]);
     } else {
@@ -607,6 +618,7 @@ export function PurchaseOrdersPage() {
   function handleManualSupplierChange(value: string) {
     setManualSupplierId(value);
     setManualMedicineSearch("");
+    setIsMedicineSuggestionsOpen(false);
     setManualItems([]);
   }
 
@@ -614,10 +626,33 @@ export function PurchaseOrdersPage() {
     if (!medicineValue) return;
     const exists = manualItems.some((it) => it.medicineId === medicineValue);
     if (exists) return;
+    const medicine = medicines.find((m) => String(m.id) === medicineValue);
+    if (medicine) {
+      setSelectedMedicineForQty(medicine);
+      setQuantityInput("1");
+      setIsQuantityDialogOpen(true);
+    }
+  }
+
+  function handleConfirmQuantity() {
+    if (!selectedMedicineForQty || !quantityInput) return;
+    const qty = parseInt(quantityInput, 10);
+    if (Number.isNaN(qty) || qty < 1) {
+      toast.error("Please enter a valid quantity.");
+      return;
+    }
     setManualItems((current) => [
       ...current,
-      createManualPoLineItem({ medicineId: medicineValue, orderQuantity: "1" }),
+      createManualPoLineItem({
+        medicineId: String(selectedMedicineForQty.id),
+        orderQuantity: qty.toString(),
+      }),
     ]);
+    setManualMedicineSearch("");
+    setIsMedicineSuggestionsOpen(false);
+    setIsQuantityDialogOpen(false);
+    setSelectedMedicineForQty(null);
+    setQuantityInput("1");
   }
 
   function handleManualItemChange(
@@ -1153,10 +1188,10 @@ export function PurchaseOrdersPage() {
                 options={supplierComboboxOptions}
                 value={manualSupplierId}
                 onValueChange={handleManualSupplierChange}
-                placeholder="Type to search supplier..."
+                placeholder="Search Supplier"
                 searchPlaceholder="Search supplier..."
                 emptyMessage="No supplier found."
-                showAllOnEmptySearch={false}
+                showAllOnEmptySearch={true}
               />
             </div>
 
@@ -1174,7 +1209,16 @@ export function PurchaseOrdersPage() {
                   <div className="relative">
                     <Input
                       value={manualMedicineSearch}
-                      onChange={(e) => setManualMedicineSearch(e.target.value)}
+                      onChange={(e) => {
+                        setManualMedicineSearch(e.target.value);
+                        setIsMedicineSuggestionsOpen(true);
+                      }}
+                      onFocus={() => setIsMedicineSuggestionsOpen(true)}
+                      onBlur={() => {
+                        if (!manualMedicineSearch.trim()) {
+                          setIsMedicineSuggestionsOpen(false);
+                        }
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
@@ -1189,7 +1233,7 @@ export function PurchaseOrdersPage() {
                       className="bg-background border-border"
                     />
 
-                    {manualMedicineSearch.trim().length > 0 && (
+                    {shouldShowMedicineSuggestions && (
                       <div className="absolute left-0 right-0 z-20 mt-2 max-h-64 overflow-y-auto rounded-md border border-border bg-background shadow-xl">
                         {filteredManualMedicines.length > 0 ? (
                           filteredManualMedicines.map((medicine) => {
@@ -1207,13 +1251,12 @@ export function PurchaseOrdersPage() {
                                 }
                                 onClick={() => {
                                   if (alreadyAdded) return;
-                                  setManualItems((current) => [
-                                    ...current,
-                                    createManualPoLineItem({
-                                      medicineId: medId,
-                                      orderQuantity: "1",
-                                    }),
-                                  ]);
+                                  const medicine = filteredManualMedicines.find((m) => String(m.id) === medId);
+                                  if (medicine) {
+                                    setSelectedMedicineForQty(medicine);
+                                    setQuantityInput("1");
+                                    setIsQuantityDialogOpen(true);
+                                  }
                                 }}
                                 disabled={alreadyAdded}
                               >
@@ -1339,6 +1382,61 @@ export function PurchaseOrdersPage() {
                   Create PO
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isQuantityDialogOpen} onOpenChange={setIsQuantityDialogOpen}>
+        <DialogContent className="border-border-strong bg-background sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add Medicine Quantity</DialogTitle>
+            <DialogDescription>
+              Enter the quantity for {selectedMedicineForQty?.name}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Medicine</label>
+              <div className="p-3 rounded-md border border-border bg-muted/30">
+                <p className="text-sm font-medium text-foreground">{selectedMedicineForQty?.name}</p>
+                {((selectedMedicineForQty as any)?.sku_code || (selectedMedicineForQty as any)?.skuCode) && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    SKU: {(selectedMedicineForQty as any).sku_code ?? (selectedMedicineForQty as any).skuCode}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Quantity *</label>
+              <Input
+                type="number"
+                min="1"
+                value={quantityInput}
+                onChange={(e) => setQuantityInput(e.target.value)}
+                placeholder="Enter quantity..."
+                className="bg-background border-border"
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsQuantityDialogOpen(false);
+                setSelectedMedicineForQty(null);
+                setQuantityInput('1');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleConfirmQuantity}>
+              Add to PO
             </Button>
           </DialogFooter>
         </DialogContent>
