@@ -42,9 +42,37 @@ const notifications = [
   },
 ];
 
+const PAGE_HEADER_CONTENT: Record<string, { title: string; description: string }> = {
+  "/inventory": {
+    title: "Inventory",
+    description: "Track SKUs, safety stock, and replenishment from the live pharmacy database.",
+  },
+  "/purchase-orders": {
+    title: "Purchase Orders",
+    description: "Review draft POs, supplier choices, and replenishment flow.",
+  },
+  "/suppliers": {
+    title: "Suppliers",
+    description: "Monitor supplier coverage and fulfillment readiness.",
+  },
+  "/reports": {
+    title: "Reports",
+    description: "Review stock trends, alerts, and operational summaries.",
+  },
+  "/settings": {
+    title: "Settings",
+    description: "Manage alerts, preferences, and profile details.",
+  },
+};
+
 export function Header(_: HeaderProps) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { profile } = useProfileSettings();
+  const isDashboard = pathname === "/";
+  const pageHeader = PAGE_HEADER_CONTENT[pathname] ?? {
+    title: "Section",
+    description: "",
+  };
 
   const initials = profile.fullName
     .split(" ")
@@ -58,16 +86,27 @@ export function Header(_: HeaderProps) {
     <header className="space-y-4 border-b border-border/70 pb-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">PIMIS</h1>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-surface px-3 py-1 text-[11px] font-medium text-muted-foreground shadow-sm">
-              <Building2 className="h-3.5 w-3.5" />
-              RS Sejahtera
-            </span>
-          </div>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            Pharmacy inventory control, forecasting, and restocking in one place.
-          </p>
+          {isDashboard ? (
+            <div className="space-y-1">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight text-foreground">Dashboard</h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Live stock, alerts, and purchase-order pressure in one place.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                  {pageHeader.title}
+                </h1>
+              </div>
+              {pageHeader.description ? (
+                <p className="max-w-2xl text-sm text-muted-foreground">{pageHeader.description}</p>
+              ) : null}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-3">

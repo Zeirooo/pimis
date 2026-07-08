@@ -54,7 +54,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               </div>
               <div>
                 <div className="text-lg font-semibold leading-none">PIMIS</div>
-                <div className="mt-1 text-xs text-sidebar-muted">Pharmacy Intelligence</div>
+                <div className="mt-1 text-xs text-sidebar-muted">Pharmacy Inventory Management</div>
               </div>
             </div>
 

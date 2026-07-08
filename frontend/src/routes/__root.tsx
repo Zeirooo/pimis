@@ -52,20 +52,20 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "PIMIS | RS Sejahtera" },
+      { title: "PIMIS" },
       {
         name: "description",
-        content: "Pharmacy inventory, smart restocking, and analytics for RS Sejahtera.",
+        content: "Pharmacy inventory, smart restocking, and analytics for pharmacies.",
       },
-      { name: "author", content: "RS Sejahtera" },
-      { property: "og:title", content: "PIMIS | RS Sejahtera" },
+      { name: "author", content: "PIMIS" },
+      { property: "og:title", content: "PIMIS" },
       {
         property: "og:description",
-        content: "Pharmacy inventory, smart restocking, and analytics for RS Sejahtera.",
+        content: "Pharmacy inventory, smart restocking, and analytics for pharmacies.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@RSSejahtera" },
+      { name: "twitter:site", content: "@pimis" },
     ],
     links: [
       {
@@ -167,7 +167,7 @@ function LoginScreen() {
           <section className="login-enter border-b border-border/70 p-8 sm:p-12 lg:border-b-0 lg:border-r">
             <div className="mb-12 flex items-center justify-between">
               <div className="text-xl font-semibold tracking-tight text-foreground">
-                PIMIS <span className="text-primary">RS Sejahtera</span>
+                PIMIS
               </div>
               <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs text-muted-foreground">
                 ID

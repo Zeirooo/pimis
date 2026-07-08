@@ -4,6 +4,6 @@ import { ReportsPage } from "@/pages/Reports";
 export const Route = createFileRoute("/_app/reports")({
   component: ReportsPage,
   head: () => ({
-    meta: [{ title: "Reports | PIMIS — RS Sejahtera" }],
+    meta: [{ title: "Reports | PIMIS" }],
   }),
 });

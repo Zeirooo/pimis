@@ -290,19 +290,6 @@ export function SuppliersPage() {
   return (
     <div className="mt-6 space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Building2 className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Supplier Directory
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Hospital formulary partners and vendor contacts (session mock data).
-            </p>
-          </div>
-        </div>
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:w-auto lg:min-w-[min(100%,420px)]">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

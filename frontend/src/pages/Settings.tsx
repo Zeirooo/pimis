@@ -116,15 +116,6 @@ export function SettingsPage() {
 
   return (
     <div className="mt-6 space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          Settings & Preferences
-        </h1>
-        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Manage your account settings and application preferences.
-        </p>
-      </div>
-
       <Tabs defaultValue="profile" className="w-full space-y-6">
         <TabsList className="grid h-auto w-full grid-cols-2 gap-1 bg-muted p-1 lg:grid-cols-3 lg:gap-0">
           <TabsTrigger value="profile" className="gap-2 text-sm">

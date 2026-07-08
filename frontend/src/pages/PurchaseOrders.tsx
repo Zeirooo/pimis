@@ -4,14 +4,15 @@ import {
   Bot,
   CheckCircle2,
   ClipboardList,
-  Edit3,
   Eye,
   FileClock,
+  Download,
   Plus,
   Search,
   ShoppingCart,
   Trash2,
 } from "lucide-react";
+import { jsPDF } from "jspdf";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -174,6 +175,10 @@ function lineItemCount(po: PurchaseOrder): number {
   return po.items.reduce((sum, item) => sum + item.qty, 0);
 }
 
+function formatInvoiceDate(isoDate: string): string {
+  return formatDisplayDate(isoDate);
+}
+
 function formatDisplayDate(isoDate: string): string {
   const d = new Date(`${isoDate}T12:00:00`);
   if (Number.isNaN(d.getTime())) return isoDate;
@@ -188,8 +193,8 @@ function StatusBadge({ status, onClick }: { status: POStatus; onClick?: () => vo
   const styles: Record<POStatus, string> = {
     "Pending AI":
       "border border-violet-500/35 bg-violet-500/12 text-violet-800 shadow-none hover:bg-violet-500/15 dark:text-violet-200",
-    "Rejected":
-      "border border-amber-500/35 bg-amber-500/12 text-amber-900 shadow-none hover:bg-amber-500/15 dark:text-amber-100",
+    Rejected:
+      "border border-destructive/30 bg-destructive/10 text-destructive shadow-none hover:bg-destructive/15 dark:border-destructive/40 dark:bg-destructive/15 dark:text-destructive-foreground",
     Approved:
       "border border-sky-500/35 bg-sky-500/12 text-sky-900 shadow-none hover:bg-sky-500/15 dark:text-sky-100",
     Completed:
@@ -225,11 +230,15 @@ function StatusBadge({ status, onClick }: { status: POStatus; onClick?: () => vo
 export function PurchaseOrdersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("all");
-  const [activePoTab, setActivePoTab] = useState<"Recomended PO" | "draft-ai" | "history">("Recomended PO");
+  const [activePoTab, setActivePoTab] = useState<"Recomended PO" | "draft-ai" | "history">(
+    "Recomended PO",
+  );
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editItems, setEditItems] = useState<PurchaseOrder["items"]>([]);
+  const [selectedInvoicePO, setSelectedInvoicePO] = useState<PurchaseOrder | null>(null);
+  const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
   const [selectedSummaryPO, setSelectedSummaryPO] = useState<PurchaseOrder | null>(null);
   const [isManualDialogOpen, setIsManualDialogOpen] = useState(false);
   const [manualSupplierId, setManualSupplierId] = useState("");
@@ -340,6 +349,11 @@ export function PurchaseOrdersPage() {
     [filteredOrders],
   );
 
+  const filteredRecommendedOrders = useMemo(
+    () => filteredOrders.filter((po) => po.status === "Pending AI"),
+    [filteredOrders],
+  );
+
   const kpiDraftAi = useMemo(
     () => mappedOrders.filter((o) => o.status === "Pending AI").length,
     [mappedOrders],
@@ -389,9 +403,7 @@ export function PurchaseOrdersPage() {
   }, [manualMedicineSearch, manualMedicines, manualSupplierId]);
 
   const shouldShowMedicineSuggestions =
-    isMedicineSuggestionsOpen &&
-    manualSupplierId &&
-    manualMedicineSearch.trim().length > 0;
+    isMedicineSuggestionsOpen && manualSupplierId && manualMedicineSearch.trim().length > 0;
 
   // Debug logs to help trace why medicines may not appear in the UI
   useEffect(() => {
@@ -407,7 +419,13 @@ export function PurchaseOrdersPage() {
     } catch (e) {
       /* ignore */
     }
-  }, [manualSupplierId, manualMedicineSearch, manualMedicines, filteredManualMedicines, manualItems]);
+  }, [
+    manualSupplierId,
+    manualMedicineSearch,
+    manualMedicines,
+    filteredManualMedicines,
+    manualItems,
+  ]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -514,11 +532,189 @@ export function PurchaseOrdersPage() {
     toast.success(`Opened ${po.poNumber} for review.`);
   }
 
-  function openEdit(po: PurchaseOrder) {
-    setSelectedPO(po);
-    setEditItems(po.items);
-    setIsDialogOpen(false);
-    setIsEditDialogOpen(true);
+  function openInvoice(po: PurchaseOrder) {
+    setSelectedInvoicePO(po);
+    setIsInvoiceDialogOpen(true);
+  }
+
+  function handleInvoiceDialogOpenChange(open: boolean) {
+    setIsInvoiceDialogOpen(open);
+    if (!open) {
+      setSelectedInvoicePO(null);
+    }
+  }
+
+  function handleDownloadInvoicePdf() {
+    if (!selectedInvoicePO) return;
+
+    try {
+      const doc = new jsPDF({ unit: "pt", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 40;
+      const contentWidth = pageWidth - margin * 2;
+      const totalQuantity = lineItemCount(selectedInvoicePO);
+      const statusText = selectedInvoicePO.status;
+      const documentLabel = "Invoice PDF";
+
+      const ensureSpace = (spaceNeeded: number) => {
+        if (currentY + spaceNeeded > pageHeight - margin) {
+          doc.addPage();
+          currentY = margin;
+        }
+      };
+
+      const drawHeader = () => {
+        doc.setTextColor(15, 23, 42);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(22);
+        doc.text("Purchase Invoice", margin, currentY);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(100, 116, 139);
+
+        const rightX = pageWidth - margin;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(15);
+        doc.setTextColor(15, 23, 42);
+        doc.text("PIMIS", rightX, currentY, { align: "right" });
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(100, 116, 139);
+        doc.text("Pharmacy Inventory Management", rightX, currentY + 14, { align: "right" });
+
+        currentY += 48;
+        doc.setDrawColor(203, 213, 225);
+        doc.line(margin, currentY, pageWidth - margin, currentY);
+        currentY += 20;
+      };
+
+      const drawInfoBox = (x: number, y: number, width: number, label: string, value: string) => {
+        const boxHeight = 46;
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(x, y, width, boxHeight, 8, 8, "S");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 139);
+        doc.text(label.toUpperCase(), x + 10, y + 16);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(15, 23, 42);
+        const wrappedValue = doc.splitTextToSize(value, width - 20);
+        doc.text(wrappedValue, x + 10, y + 32);
+      };
+
+      let currentY = margin;
+      drawHeader();
+
+      const boxGap = 12;
+      const boxWidth = (contentWidth - boxGap) / 2;
+      drawInfoBox(margin, currentY, boxWidth, "PO Number", selectedInvoicePO.poNumber);
+      drawInfoBox(
+        margin + boxWidth + boxGap,
+        currentY,
+        boxWidth,
+        "Order Date",
+        formatInvoiceDate(selectedInvoicePO.date),
+      );
+      currentY += 58;
+      drawInfoBox(margin, currentY, boxWidth, "Supplier", selectedInvoicePO.supplier);
+      drawInfoBox(margin + boxWidth + boxGap, currentY, boxWidth, "Status", statusText);
+      currentY += 70;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(15, 23, 42);
+      doc.text("Line Items", margin, currentY);
+      currentY += 12;
+
+      const tableTop = currentY;
+      const colNo = margin;
+      const colMedicine = margin + 34;
+      const colQty = pageWidth - margin - 80;
+      const rowHeight = 22;
+
+      const drawTableHeader = () => {
+        doc.setFillColor(241, 245, 249);
+        doc.rect(margin, currentY, contentWidth, rowHeight, "F");
+        doc.setDrawColor(226, 232, 240);
+        doc.rect(margin, currentY, contentWidth, rowHeight, "S");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(100, 116, 139);
+        doc.text("#", colNo + 8, currentY + 15);
+        doc.text("Medicine", colMedicine, currentY + 15);
+        doc.text("Qty", colQty, currentY + 15, { align: "right" });
+        currentY += rowHeight;
+      };
+
+      drawTableHeader();
+
+      selectedInvoicePO.items.forEach((item, index) => {
+        const wrappedName = doc.splitTextToSize(item.name, colQty - colMedicine - 16);
+        const itemHeight = Math.max(rowHeight, wrappedName.length * 12 + 10);
+        ensureSpace(itemHeight + 20);
+
+        if (currentY !== tableTop + rowHeight && currentY === margin) {
+          drawTableHeader();
+        }
+
+        doc.setDrawColor(226, 232, 240);
+        doc.rect(margin, currentY, contentWidth, itemHeight, "S");
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(15, 23, 42);
+        doc.text(String(index + 1), colNo + 8, currentY + 14);
+        doc.text(wrappedName, colMedicine, currentY + 14);
+        doc.text(item.qty.toLocaleString(), colQty, currentY + 14, { align: "right" });
+        currentY += itemHeight;
+      });
+
+      currentY += 18;
+      ensureSpace(80);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(15, 23, 42);
+      doc.text("Summary", margin, currentY);
+      currentY += 10;
+
+      const summaryBoxWidth = (contentWidth - 24) / 3;
+      drawInfoBox(
+        margin,
+        currentY,
+        summaryBoxWidth,
+        "Line Items",
+        String(selectedInvoicePO.items.length),
+      );
+      drawInfoBox(
+        margin + summaryBoxWidth + 12,
+        currentY,
+        summaryBoxWidth,
+        "Total Quantity",
+        totalQuantity.toLocaleString(),
+      );
+      drawInfoBox(
+        margin + (summaryBoxWidth + 12) * 2,
+        currentY,
+        summaryBoxWidth,
+        "Document",
+        documentLabel,
+      );
+
+      currentY += 64;
+      ensureSpace(44);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+
+      const fileName = `${selectedInvoicePO.poNumber}-invoice.pdf`.replaceAll("/", "-");
+      doc.save(fileName);
+      toast.success(`Downloaded ${selectedInvoicePO.poNumber} as PDF.`);
+    } catch (error) {
+      console.error(error);
+      toast.error("Could not generate the invoice PDF.");
+    }
   }
 
   function handleEditDialogOpenChange(open: boolean) {
@@ -532,21 +728,17 @@ export function PurchaseOrdersPage() {
   function handleSaveEditChanges() {
     if (!selectedPO) return;
 
-    queryClient.setQueryData<PurchaseOrderResponse[] | undefined>(
-      queryKeys.purchaseOrders,
-      (old) =>
-        old?.map((po) => {
-          if (po.id !== selectedPO._rawId) return po;
-          return {
-            ...po,
-            items: po.items.map((item) => {
-              const editedItem = editItems.find((edited) => edited.medicineId === item.medicine_id);
-              return editedItem
-                ? { ...item, order_quantity: editedItem.qty }
-                : item;
-            }),
-          };
-        }),
+    queryClient.setQueryData<PurchaseOrderResponse[] | undefined>(queryKeys.purchaseOrders, (old) =>
+      old?.map((po) => {
+        if (po.id !== selectedPO._rawId) return po;
+        return {
+          ...po,
+          items: po.items.map((item) => {
+            const editedItem = editItems.find((edited) => edited.medicineId === item.medicine_id);
+            return editedItem ? { ...item, order_quantity: editedItem.qty } : item;
+          }),
+        };
+      }),
     );
 
     setSelectedPO((current) =>
@@ -714,14 +906,6 @@ export function PurchaseOrdersPage() {
   return (
     <div className="mt-6 space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            Purchase Orders & Restocking
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Monitor draft restocking orders, approvals, and supplier fulfilment from backend data.
-          </p>
-        </div>
         <div className="flex w-full flex-col gap-3 lg:w-auto lg:min-w-[min(100%,520px)]">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -807,16 +991,14 @@ export function PurchaseOrdersPage() {
                 {searchQuery.trim() || statusFilter !== "all" ? " after filters" : ""}.
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <ShoppingCart className="h-4 w-4" />
-              <span>Review opens the approval workspace.</span>
-            </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
           <Tabs
             value={activePoTab}
-            onValueChange={(value) => setActivePoTab(value as "Recomended PO" | "draft-ai" | "history")}
+            onValueChange={(value) =>
+              setActivePoTab(value as "Recomended PO" | "draft-ai" | "history")
+            }
             className="w-full"
           >
             <div className="border-b border-border px-4 py-3">
@@ -881,14 +1063,14 @@ export function PurchaseOrdersPage() {
                           Failed to load purchase orders. Check server connection.
                         </TableCell>
                       </TableRow>
-                    ) : filteredOrders.length === 0 ? (
+                    ) : filteredRecommendedOrders.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
-                          No purchase orders match your filters.
+                          No pending AI purchase orders match your filters.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      filteredOrders.map((po) => (
+                      filteredRecommendedOrders.map((po) => (
                         <TableRow key={`${po.poNumber}-${po.date}`} className="border-border">
                           <TableCell className="pl-6 font-mono text-xs font-medium text-foreground">
                             {po.poNumber}
@@ -909,7 +1091,9 @@ export function PurchaseOrdersPage() {
                             <StatusBadge
                               status={po.status}
                               onClick={
-                                po.status === "Pending AI" ? () => openDraftAiSummary(po) : undefined
+                                po.status === "Pending AI"
+                                  ? () => openDraftAiSummary(po)
+                                  : undefined
                               }
                             />
                           </TableCell>
@@ -924,16 +1108,6 @@ export function PurchaseOrdersPage() {
                               >
                                 <Eye className="h-4 w-4" />
                                 Review
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="gap-1.5"
-                                onClick={() => openEdit(po)}
-                              >
-                                <Edit3 className="h-4 w-4" />
-                                Edit
                               </Button>
                             </div>
                           </TableCell>
@@ -974,7 +1148,7 @@ export function PurchaseOrdersPage() {
                     {isLoading ? (
                       Array.from({ length: 5 }).map((_, i) => (
                         <TableRow key={`history-skeleton-row-${i}`}>
-                          {['pl-6', '', '', 'text-right', '', 'pr-6 text-right'].map((cls, j) => (
+                          {["pl-6", "", "", "text-right", "", "pr-6 text-right"].map((cls, j) => (
                             <TableCell key={`history-skeleton-cell-${i}-${j}`} className={cls}>
                               <Skeleton className="h-4 w-full" />
                             </TableCell>
@@ -1024,20 +1198,10 @@ export function PurchaseOrdersPage() {
                                 variant="ghost"
                                 size="sm"
                                 className="gap-1.5 text-muted-foreground hover:text-foreground"
-                                onClick={() => openReview(po)}
+                                onClick={() => openInvoice(po)}
                               >
                                 <Eye className="h-4 w-4" />
-                                Review
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="gap-1.5"
-                                onClick={() => openEdit(po)}
-                              >
-                                <Edit3 className="h-4 w-4" />
-                                Edit
+                                Invoice
                               </Button>
                             </div>
                           </TableCell>
@@ -1059,7 +1223,8 @@ export function PurchaseOrdersPage() {
                         Pending AI manager tab
                       </div>
                       <p className="mt-1 text-sm text-violet-900/80">
-                        Review the draft data, AI rationale, and safety-stock signal before approving or rejecting.
+                        Review the draft data, AI rationale, and safety-stock signal before
+                        approving or rejecting.
                       </p>
                     </div>
                     {selectedSummaryPO ? (
@@ -1077,17 +1242,24 @@ export function PurchaseOrdersPage() {
                   {selectedSummaryPO ? (
                     <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
                       <div className="rounded-lg border border-violet-200 bg-white/80 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Selected draft</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
+                          Selected draft
+                        </p>
                         <div className="mt-2 space-y-2 text-sm text-foreground">
-                          <p className="font-mono text-xs text-muted-foreground">{selectedSummaryPO.poNumber}</p>
-                          <p>
-                            <span className="font-medium">Supplier:</span> {selectedSummaryPO.supplier}
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {selectedSummaryPO.poNumber}
                           </p>
                           <p>
-                            <span className="font-medium">Date:</span> {formatDisplayDate(selectedSummaryPO.date)}
+                            <span className="font-medium">Supplier:</span>{" "}
+                            {selectedSummaryPO.supplier}
                           </p>
                           <p>
-                            <span className="font-medium">Total items:</span> {lineItemCount(selectedSummaryPO)}
+                            <span className="font-medium">Date:</span>{" "}
+                            {formatDisplayDate(selectedSummaryPO.date)}
+                          </p>
+                          <p>
+                            <span className="font-medium">Total items:</span>{" "}
+                            {lineItemCount(selectedSummaryPO)}
                           </p>
                           <div className="pt-1">
                             <StatusBadge status={selectedSummaryPO.status} />
@@ -1097,8 +1269,12 @@ export function PurchaseOrdersPage() {
 
                       {selectedDraftAiReason ? (
                         <div className="rounded-lg border border-violet-200 bg-white/80 p-4">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Inspection reason</p>
-                          <p className="mt-2 text-sm text-violet-950">{selectedDraftAiReason.summary}</p>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
+                            Inspection reason
+                          </p>
+                          <p className="mt-2 text-sm text-violet-950">
+                            {selectedDraftAiReason.summary}
+                          </p>
                           <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-violet-900/80">
                             {selectedDraftAiReason.factors.map((factor, idx) => (
                               <li key={`draft-reason-${idx}`}>{factor}</li>
@@ -1201,9 +1377,6 @@ export function PurchaseOrdersPage() {
                 <div className="grid gap-2">
                   <div className="flex items-end justify-between gap-4">
                     <p className="text-sm font-medium text-foreground">Search Medicine</p>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setManualItems([])}>
-                      Clear selected
-                    </Button>
                   </div>
 
                   <div className="relative">
@@ -1238,7 +1411,9 @@ export function PurchaseOrdersPage() {
                         {filteredManualMedicines.length > 0 ? (
                           filteredManualMedicines.map((medicine) => {
                             const medId = String(medicine.id);
-                            const alreadyAdded = manualItems.some((item) => item.medicineId === medId);
+                            const alreadyAdded = manualItems.some(
+                              (item) => item.medicineId === medId,
+                            );
                             return (
                               <button
                                 key={`med-${medId}`}
@@ -1251,7 +1426,9 @@ export function PurchaseOrdersPage() {
                                 }
                                 onClick={() => {
                                   if (alreadyAdded) return;
-                                  const medicine = filteredManualMedicines.find((m) => String(m.id) === medId);
+                                  const medicine = filteredManualMedicines.find(
+                                    (m) => String(m.id) === medId,
+                                  );
                                   if (medicine) {
                                     setSelectedMedicineForQty(medicine);
                                     setQuantityInput("1");
@@ -1262,15 +1439,22 @@ export function PurchaseOrdersPage() {
                               >
                                 <div className="flex items-center justify-between gap-2">
                                   <div>
-                                    <p className="text-sm font-medium text-foreground">{medicine.name}</p>
+                                    <p className="text-sm font-medium text-foreground">
+                                      {medicine.name}
+                                    </p>
                                     {((medicine as any).sku_code || (medicine as any).skuCode) && (
-                                      <p className="text-xs text-muted-foreground">SKU: {(medicine as any).sku_code ?? (medicine as any).skuCode}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        SKU:{" "}
+                                        {(medicine as any).sku_code ?? (medicine as any).skuCode}
+                                      </p>
                                     )}
                                   </div>
                                   {alreadyAdded ? (
                                     <span className="text-xs text-success">Added</span>
                                   ) : (
-                                    <span className="text-xs text-muted-foreground">Tap to add</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      Tap to add
+                                    </span>
                                   )}
                                 </div>
                               </button>
@@ -1290,7 +1474,9 @@ export function PurchaseOrdersPage() {
 
                   <div className="mt-4 border-t border-border pt-4">
                     <div className="mb-3">
-                      <p className="text-sm font-medium text-foreground">Selected Medicines ({manualItems.length})</p>
+                      <p className="text-sm font-medium text-foreground">
+                        Selected Medicines ({manualItems.length})
+                      </p>
                     </div>
 
                     {manualItems.length === 0 ? (
@@ -1302,11 +1488,18 @@ export function PurchaseOrdersPage() {
                         {manualItems.map((item) => {
                           const medicine = medicines.find((m) => String(m.id) === item.medicineId);
                           return (
-                            <div key={item.id} className="flex items-center gap-3 p-3 rounded-md border border-border bg-muted/30">
+                            <div
+                              key={item.id}
+                              className="flex items-center gap-3 p-3 rounded-md border border-border bg-muted/30"
+                            >
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-foreground truncate">{medicine?.name || `Medicine #${item.medicineId}`}</p>
+                                <p className="text-sm font-medium text-foreground truncate">
+                                  {medicine?.name || `Medicine #${item.medicineId}`}
+                                </p>
                                 {(medicine as any)?.sku_code && (
-                                  <p className="text-xs text-muted-foreground">SKU: {(medicine as any).sku_code}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    SKU: {(medicine as any).sku_code}
+                                  </p>
                                 )}
                               </div>
 
@@ -1317,7 +1510,13 @@ export function PurchaseOrdersPage() {
                                     type="number"
                                     min={1}
                                     value={item.orderQuantity}
-                                    onChange={(e) => handleManualItemChange(item.id, "orderQuantity", e.target.value)}
+                                    onChange={(e) =>
+                                      handleManualItemChange(
+                                        item.id,
+                                        "orderQuantity",
+                                        e.target.value,
+                                      )
+                                    }
                                     className="w-14 h-7 border-0 bg-background text-sm text-center"
                                   />
                                 </div>
@@ -1342,12 +1541,21 @@ export function PurchaseOrdersPage() {
 
                   {/* PO Number Optional */}
                   <div className="grid gap-2 mt-4">
-                    <label className="text-xs font-medium text-muted-foreground">PO Number (optional)</label>
-                    <Input value={manualPoNumber} onChange={(e) => setManualPoNumber(e.target.value)} placeholder="e.g., PO-2026-001" className="bg-background border-border h-9 text-sm" />
+                    <label className="text-xs font-medium text-muted-foreground">
+                      PO Number (optional)
+                    </label>
+                    <Input
+                      value={manualPoNumber}
+                      onChange={(e) => setManualPoNumber(e.target.value)}
+                      placeholder="e.g., PO-2026-001"
+                      className="bg-background border-border h-9 text-sm"
+                    />
                   </div>
                 </div>
               ) : (
-                <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">Please select a supplier first to search medicines.</div>
+                <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+                  Please select a supplier first to search medicines.
+                </div>
               )}
             </div>
           </div>
@@ -1400,10 +1608,15 @@ export function PurchaseOrdersPage() {
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">Medicine</label>
               <div className="p-3 rounded-md border border-border bg-muted/30">
-                <p className="text-sm font-medium text-foreground">{selectedMedicineForQty?.name}</p>
-                {((selectedMedicineForQty as any)?.sku_code || (selectedMedicineForQty as any)?.skuCode) && (
+                <p className="text-sm font-medium text-foreground">
+                  {selectedMedicineForQty?.name}
+                </p>
+                {((selectedMedicineForQty as any)?.sku_code ||
+                  (selectedMedicineForQty as any)?.skuCode) && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    SKU: {(selectedMedicineForQty as any).sku_code ?? (selectedMedicineForQty as any).skuCode}
+                    SKU:{" "}
+                    {(selectedMedicineForQty as any).sku_code ??
+                      (selectedMedicineForQty as any).skuCode}
                   </p>
                 )}
               </div>
@@ -1430,7 +1643,7 @@ export function PurchaseOrdersPage() {
               onClick={() => {
                 setIsQuantityDialogOpen(false);
                 setSelectedMedicineForQty(null);
-                setQuantityInput('1');
+                setQuantityInput("1");
               }}
             >
               Cancel
@@ -1447,17 +1660,22 @@ export function PurchaseOrdersPage() {
           {selectedPO ? (
             <>
               <DialogHeader>
-                <DialogTitle className="font-mono text-base">Edit {selectedPO.poNumber}</DialogTitle>
+                <DialogTitle className="font-mono text-base">
+                  Edit {selectedPO.poNumber}
+                </DialogTitle>
                 <DialogDescription>
                   Adjust quantities for the selected purchase order before saving.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
                 <p className="text-sm text-muted-foreground">
-                  Supplier: <span className="font-semibold text-foreground">{selectedPO.supplier}</span>
+                  Supplier:{" "}
+                  <span className="font-semibold text-foreground">{selectedPO.supplier}</span>
                 </p>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span className="tabular-nums">Order date: {formatDisplayDate(selectedPO.date)}</span>
+                  <span className="tabular-nums">
+                    Order date: {formatDisplayDate(selectedPO.date)}
+                  </span>
                   <span className="text-border">|</span>
                   <span className="inline-flex items-center gap-2">
                     Status <StatusBadge status={selectedPO.status} />
@@ -1484,7 +1702,9 @@ export function PurchaseOrdersPage() {
                           const value = Number(event.target.value);
                           setEditItems((current) =>
                             current.map((line, lineIndex) =>
-                              lineIndex === idx ? { ...line, qty: Number.isFinite(value) ? value : 0 } : line,
+                              lineIndex === idx
+                                ? { ...line, qty: Number.isFinite(value) ? value : 0 }
+                                : line,
                             ),
                           );
                         }}
@@ -1494,7 +1714,11 @@ export function PurchaseOrdersPage() {
                 </div>
               </div>
               <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
-                <Button type="button" variant="outline" onClick={() => handleEditDialogOpenChange(false)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleEditDialogOpenChange(false)}
+                >
                   Cancel
                 </Button>
                 <Button type="button" onClick={handleSaveEditChanges}>
@@ -1505,6 +1729,113 @@ export function PurchaseOrdersPage() {
           ) : (
             <div className="py-6 text-center text-sm text-muted-foreground" aria-live="polite">
               Select a purchase order to edit.
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isInvoiceDialogOpen} onOpenChange={handleInvoiceDialogOpenChange}>
+        <DialogContent className="border-border-strong bg-background sm:max-w-4xl">
+          {selectedInvoicePO ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-xl font-semibold text-foreground">
+                  Purchase Invoice
+                </DialogTitle>
+                <DialogDescription>
+                  Simple invoice summary for quick manager review and PDF download.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 rounded-2xl border border-border bg-muted/10 p-4">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-xl border border-border bg-background p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      PO Number
+                    </p>
+                    <p className="mt-1 font-mono text-sm font-semibold text-foreground">
+                      {selectedInvoicePO.poNumber}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      Supplier
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">
+                      {selectedInvoicePO.supplier}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      Order Date
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">
+                      {formatInvoiceDate(selectedInvoicePO.date)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      Status
+                    </p>
+                    <div className="mt-2 inline-flex">
+                      <StatusBadge status={selectedInvoicePO.status} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-foreground">Invoice line items</h3>
+                  <div className="overflow-hidden rounded-xl border border-border">
+                    <table className="w-full border-collapse text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/40">
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">
+                            #
+                          </th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">
+                            Medicine
+                          </th>
+                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">
+                            Qty
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedInvoicePO.items.map((item, idx) => (
+                          <tr
+                            key={`${selectedInvoicePO.poNumber}-${idx}`}
+                            className="border-b border-border last:border-0 bg-background"
+                          >
+                            <td className="px-3 py-2.5 text-muted-foreground">{idx + 1}</td>
+                            <td className="px-3 py-2.5 text-foreground">{item.name}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums font-medium text-foreground">
+                              {item.qty.toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleInvoiceDialogOpenChange(false)}
+                >
+                  Close
+                </Button>
+                <Button type="button" onClick={handleDownloadInvoicePdf} className="gap-2">
+                  <Download className="h-4 w-4" />
+                  Download PDF
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <div className="py-6 text-center text-sm text-muted-foreground" aria-live="polite">
+              Select a purchase order to view its invoice.
             </div>
           )}
         </DialogContent>

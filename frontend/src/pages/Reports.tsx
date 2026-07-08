@@ -344,13 +344,6 @@ export function ReportsPage() {
   return (
     <div className="mt-6 space-y-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Analytics & Reports</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Consolidated pharmacy intelligence: stock movement, ML demand signals, and financial
-            exposure from near-expiry inventory.
-          </p>
-        </div>
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
           <Select value={reportScope} onValueChange={setReportScope}>
             <SelectTrigger

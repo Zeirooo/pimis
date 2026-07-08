@@ -1,38 +1,18 @@
-import { useMemo, type CSSProperties } from "react";
-import { createFileRoute, Navigate, useRouterState } from "@tanstack/react-router";
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { createFileRoute, Link, Navigate, useRouterState } from "@tanstack/react-router";
 import {
-  ComposedChart,
   Area,
   Line,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Cell,
   AreaChart,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-// input removed — search bar deleted
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ArrowRight, TrendingDown, TrendingUp, Download } from "lucide-react";
 import { toast } from "sonner";
 import { useMedicines, usePredictions, usePurchaseOrders } from "@/hooks/use-api";
@@ -139,27 +119,24 @@ const STATUS_CONFIG: Record<StockStatus, { label: string; className: string; bar
   },
 };
 
-const CATEGORY_PROGRESS: CategoryBar[] = [
-  {
-    name: "Analgesic",
-    value: 78,
-    color: "#10b981",
-    style: { width: "78%", backgroundColor: "#10b981" },
-  },
-  {
-    name: "Antibiotic",
-    value: 61,
-    color: "#0ea5e9",
-    style: { width: "61%", backgroundColor: "#0ea5e9" },
-  },
-  {
-    name: "Cardio",
-    value: 45,
-    color: "#f59e0b",
-    style: { width: "45%", backgroundColor: "#f59e0b" },
-  },
-  { name: "GI", value: 33, color: "#8b5cf6", style: { width: "33%", backgroundColor: "#8b5cf6" } },
-];
+const CATEGORY_COLORS = ["#10b981", "#0ea5e9", "#f59e0b", "#8b5cf6", "#ef4444", "#14b8a6"];
+
+type DashboardPanel = "restock" | "draftPos" | null;
+
+type RestockAlertMedicine = {
+  id: number;
+  name: string;
+  currentStock: number;
+  safetyStockLevel: number;
+  isCritical: boolean;
+};
+
+type DraftPurchaseOrder = {
+  id: number;
+  poNumber: string;
+  createdAt: string;
+  itemCount: number;
+};
 
 const FALLBACK_TABLE_ROWS: ReportRow[] = [
   {
@@ -275,7 +252,7 @@ function renderKpi(item: KpiCard, index: number) {
 }
 
 function renderStatusBar(point: DepletionPoint) {
-  return <Cell key={point.status} fill={STATUS_CONFIG[point.status].barColor} />;
+  return null;
 }
 
 function renderCategoryProgress(item: CategoryBar) {
@@ -292,7 +269,7 @@ function renderCategoryProgress(item: CategoryBar) {
   );
 }
 
-function renderTableRow(row: ReportRow) {
+function renderCompactWorklistRow(row: ReportRow) {
   const config = STATUS_CONFIG[row.status];
 
   function handleReviewClick() {
@@ -300,26 +277,35 @@ function renderTableRow(row: ReportRow) {
   }
 
   return (
-    <TableRow key={row.sku} className="border-slate-100">
-      <TableCell className="whitespace-nowrap font-mono text-[11px] text-slate-500">
-        {row.sku}
-      </TableCell>
-      <TableCell className="whitespace-nowrap">
-        <p className="font-medium text-slate-900">{row.name}</p>
-        <p className="text-xs text-slate-500">{row.form}</p>
-      </TableCell>
-      <TableCell className="whitespace-nowrap text-right tabular-nums text-slate-700">
-        {row.currentStock}
-      </TableCell>
-      <TableCell className="whitespace-nowrap text-right tabular-nums text-slate-700">
-        {row.predictedDemand7d}
-      </TableCell>
-      <TableCell>
-        <Badge variant="outline" className={config.className}>
-          {config.label}
-        </Badge>
-      </TableCell>
-      <TableCell className="text-right">
+    <div
+      key={row.sku}
+      className="flex items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/70 px-3 py-2.5"
+    >
+      <div className="min-w-0 space-y-0.5">
+        <div className="flex items-center gap-2">
+          <p className="truncate text-sm font-medium text-slate-900">{row.name}</p>
+          <Badge variant="outline" className={config.className}>
+            {config.label}
+          </Badge>
+        </div>
+        <p className="truncate text-[11px] text-slate-500">
+          {row.sku} · {row.form}
+        </p>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-4 text-right">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Stock</div>
+          <div className="text-sm font-semibold tabular-nums text-slate-900">
+            {row.currentStock}
+          </div>
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">7d need</div>
+          <div className="text-sm font-semibold tabular-nums text-slate-900">
+            {row.predictedDemand7d}
+          </div>
+        </div>
         <Button
           variant="ghost"
           size="sm"
@@ -329,12 +315,255 @@ function renderTableRow(row: ReportRow) {
           <span>Review</span>
           <ArrowRight className="h-3.5 w-3.5" />
         </Button>
-      </TableCell>
-    </TableRow>
+      </div>
+    </div>
+  );
+}
+
+function formatDisplayDate(isoDate: string): string {
+  const parsedDate = new Date(`${isoDate}T12:00:00`);
+  if (Number.isNaN(parsedDate.getTime())) return isoDate;
+  return parsedDate.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function SummaryCardLink({
+  to,
+  search,
+  className,
+  children,
+}: {
+  to: string;
+  search?: Record<string, string>;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      to={to as never}
+      search={search as never}
+      className={`group block h-full rounded-2xl border border-border/70 bg-card/90 p-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 ${className ?? ""}`}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function DashboardSnapshot({
+  totalMedicines,
+  lowStockCount,
+  pendingDraftPoCount,
+  restockAlertMedicines,
+  draftPurchaseOrders,
+  expandedPanel,
+  onTogglePanel,
+}: {
+  totalMedicines: number;
+  lowStockCount: number;
+  pendingDraftPoCount: number | null;
+  restockAlertMedicines: RestockAlertMedicine[];
+  draftPurchaseOrders: DraftPurchaseOrder[];
+  expandedPanel: DashboardPanel;
+  onTogglePanel: (panel: DashboardPanel) => void;
+}) {
+  const overlayOpen = expandedPanel !== null;
+
+  return (
+    <div className="relative">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-12">
+        <SummaryCardLink
+          to="/inventory"
+          search={{ focus: "all" }}
+          className="order-2 border-emerald-200 bg-emerald-50/55 md:order-2 lg:col-span-3"
+        >
+          <div className="flex h-full flex-col gap-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                  Medicines
+                </div>
+              </div>
+              <div className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                Inventory
+              </div>
+            </div>
+
+            <div className="text-[2rem] font-semibold tabular-nums tracking-tight text-foreground lg:text-[2.15rem]">
+              {totalMedicines.toLocaleString()}
+            </div>
+          </div>
+        </SummaryCardLink>
+
+        <button
+          type="button"
+          onClick={() => onTogglePanel(expandedPanel === "restock" ? null : "restock")}
+          className="order-1 rounded-2xl border border-amber-200 bg-amber-50/55 p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md md:order-1 lg:col-span-6"
+          aria-expanded={expandedPanel === "restock"}
+        >
+          <div className="flex h-full flex-col gap-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                  Restock Alerts
+                </div>
+              </div>
+              <div className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                Needs review
+              </div>
+            </div>
+            <div className="text-[2rem] font-semibold tabular-nums tracking-tight text-foreground lg:text-[2.15rem]">
+              {lowStockCount.toLocaleString()}
+            </div>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onTogglePanel(expandedPanel === "draftPos" ? null : "draftPos")}
+          className="order-3 rounded-2xl border border-sky-200 bg-sky-50/55 p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md md:order-3 lg:col-span-3"
+          aria-expanded={expandedPanel === "draftPos"}
+        >
+          <div className="flex h-full flex-col gap-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                  Draft PO
+                </div>
+              </div>
+              <div className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[10px] font-semibold text-sky-700">
+                {pendingDraftPoCount === null ? "Unavailable" : "Awaiting"}
+              </div>
+            </div>
+            <div className="text-[2rem] font-semibold tabular-nums tracking-tight text-foreground lg:text-[2.15rem]">
+              {pendingDraftPoCount === null ? "N/A" : pendingDraftPoCount.toLocaleString()}
+            </div>
+          </div>
+        </button>
+      </div>
+
+      {overlayOpen ? (
+        <div
+          className={`absolute left-0 top-full z-50 mt-2 px-1 ${expandedPanel === "draftPos" ? "w-[min(40rem,calc(100vw-1rem))] lg:w-[calc(50%-0.375rem)]" : "w-[min(40rem,calc(100vw-1rem))] lg:w-[calc(50%-0.375rem)]"}`}
+        >
+          <div className="max-h-[22rem] overflow-auto rounded-2xl border border-border/70 bg-background/95 shadow-xl ring-1 ring-black/5 backdrop-blur">
+            {expandedPanel === "restock" ? (
+              <div className="p-3 sm:p-3.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                      Restock Alerts
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onTogglePanel(null)}
+                    className="rounded-full px-2.5"
+                  >
+                    Close
+                  </Button>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {restockAlertMedicines.slice(0, 5).map((medicine) => (
+                    <div
+                      key={medicine.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50/35 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-[13px] font-medium text-foreground">
+                          {medicine.name}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          Stock {medicine.currentStock} · Safety {medicine.safetyStockLevel}
+                        </div>
+                      </div>
+                      <div
+                        className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${medicine.isCritical ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}
+                      >
+                        {medicine.isCritical ? "Critical" : "Below safety"}
+                      </div>
+                    </div>
+                  ))}
+                  {restockAlertMedicines.length > 5 ? (
+                    <div className="px-1 text-[11px] text-muted-foreground">and more</div>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button asChild type="button" size="sm" className="rounded-full">
+                    <Link to="/inventory" search={{ focus: "alerts" }}>
+                      Open restocking menu
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {expandedPanel === "draftPos" ? (
+              <div className="p-3 sm:p-3.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+                      Draft Purchase Orders
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onTogglePanel(null)}
+                    className="rounded-full px-2.5"
+                  >
+                    Close
+                  </Button>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {draftPurchaseOrders.slice(0, 5).map((po) => (
+                    <div
+                      key={po.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/75 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-[13px] font-medium text-foreground">
+                          {po.poNumber}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {formatDisplayDate(po.createdAt)} · {po.itemCount} item
+                          {po.itemCount === 1 ? "" : "s"}
+                        </div>
+                      </div>
+                      <div className="shrink-0 rounded-full bg-violet-100 px-2.5 py-0.5 text-[10px] font-semibold text-violet-700">
+                        Pending AI
+                      </div>
+                    </div>
+                  ))}
+                  {draftPurchaseOrders.length > 5 ? (
+                    <div className="px-1 text-[11px] text-muted-foreground">see more</div>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button asChild type="button" size="sm" className="rounded-full">
+                    <Link to="/purchase-orders">Review drafted POs</Link>
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
 function DashboardPage() {
+  const [expandedPanel, setExpandedPanel] = useState<DashboardPanel>(null);
   const {
     data: medicines = [],
     isLoading: medicinesLoading,
@@ -347,15 +576,40 @@ function DashboardPage() {
   const lowStockCount = medicines.filter(
     (medicine) => medicine.current_stock <= medicine.safety_stock_level,
   ).length;
-  const criticalCount = medicines.filter(
-    (medicine) => medicine.current_stock < medicine.safety_stock_level * 0.5,
-  ).length;
-  const pendingDraftPoCount = purchaseOrdersError
-    ? null
-    : purchaseOrders.filter(
-        (purchaseOrder) =>
-          purchaseOrder.status === "DRAFT_AI" || purchaseOrder.status === "REJECTED",
-      ).length;
+  const pendingReviewPurchaseOrders = useMemo(
+    () =>
+      purchaseOrdersError
+        ? []
+        : purchaseOrders
+            .filter((purchaseOrder) => purchaseOrder.status === "DRAFT_AI")
+            .sort(
+              (left, right) =>
+                new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+            ),
+    [purchaseOrders, purchaseOrdersError],
+  );
+
+  const pendingDraftPoCount = purchaseOrdersError ? null : pendingReviewPurchaseOrders.length;
+
+  const restockAlertMedicines = useMemo(
+    () =>
+      medicines
+        .filter((medicine) => medicine.current_stock <= medicine.safety_stock_level)
+        .sort((left, right) => {
+          const leftCritical = left.current_stock < left.safety_stock_level * 0.5;
+          const rightCritical = right.current_stock < right.safety_stock_level * 0.5;
+          if (leftCritical !== rightCritical) return leftCritical ? -1 : 1;
+          return left.current_stock - right.current_stock;
+        })
+        .map((medicine) => ({
+          id: medicine.id,
+          name: medicine.name,
+          currentStock: medicine.current_stock,
+          safetyStockLevel: medicine.safety_stock_level,
+          isCritical: medicine.current_stock < medicine.safety_stock_level * 0.5,
+        })),
+    [medicines],
+  );
 
   const targetMedicineId = medicines[0]?.id ?? null;
   const { data: predictions = [] } = usePredictions(targetMedicineId);
@@ -372,76 +626,64 @@ function DashboardPage() {
     }));
   }, [predictions]);
 
+  const categoryProgress = useMemo<CategoryBar[]>(() => {
+    if (medicines.length === 0) {
+      return [];
+    }
+
+    const categoryTotals = medicines.reduce((totals, medicine) => {
+      const categoryName = medicine.category.trim() || "Uncategorized";
+      const currentTotal = totals.get(categoryName) ?? 0;
+      totals.set(categoryName, currentTotal + medicine.current_stock);
+      return totals;
+    }, new Map<string, number>());
+
+    const totalStock = Array.from(categoryTotals.values()).reduce((sum, value) => sum + value, 0);
+    const safeTotal = totalStock > 0 ? totalStock : 1;
+
+    return Array.from(categoryTotals.entries())
+      .map(([name, stock], index) => {
+        const value = Math.round((stock / safeTotal) * 100);
+        const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
+
+        return {
+          name,
+          value,
+          color,
+          style: { width: `${value}%`, backgroundColor: color },
+        };
+      })
+      .sort((left, right) => right.value - left.value)
+      .slice(0, 4);
+  }, [medicines]);
+
   const worklistRows = useMemo<ReportRow[]>(() => {
     if (medicines.length === 0) {
       return FALLBACK_TABLE_ROWS;
     }
 
-    return medicines.slice(0, 5).map((medicine) => ({
-      sku: medicine.sku_code,
-      name: medicine.name,
-      form: medicine.unit_measurement,
-      currentStock: medicine.current_stock,
-      predictedDemand7d: Math.max(
-        medicine.safety_stock_level,
-        Math.round(medicine.current_stock * 0.75 + medicine.safety_stock_level * 0.5),
-      ),
-      status: (medicine.current_stock < medicine.safety_stock_level * 0.5
-        ? "Critical"
-        : medicine.current_stock <= medicine.safety_stock_level
-          ? "Low Stock"
-          : medicine.current_stock > medicine.safety_stock_level * 2
-            ? "Overstock"
-            : "Healthy") as StockStatus,
-    }));
+    return medicines
+      .filter((medicine) => medicine.current_stock <= medicine.safety_stock_level)
+      .sort((left, right) => {
+        const leftCritical = left.current_stock < left.safety_stock_level * 0.5;
+        const rightCritical = right.current_stock < right.safety_stock_level * 0.5;
+        if (leftCritical !== rightCritical) return leftCritical ? -1 : 1;
+        return left.current_stock - right.current_stock;
+      })
+      .map((medicine) => ({
+        sku: medicine.sku_code,
+        name: medicine.name,
+        form: medicine.unit_measurement,
+        currentStock: medicine.current_stock,
+        predictedDemand7d: Math.max(
+          medicine.safety_stock_level,
+          Math.round(medicine.current_stock * 0.75 + medicine.safety_stock_level * 0.5),
+        ),
+        status: (medicine.current_stock < medicine.safety_stock_level * 0.5
+          ? "Critical"
+          : "Low Stock") as StockStatus,
+      }));
   }, [medicines]);
-
-  const KPI_DATA_LIVE: KpiCard[] = [
-    {
-      title: "Total Medicines",
-      value: totalMedicines.toLocaleString(),
-      delta: "+4.2%",
-      positive: true,
-      sparkColor: "#10b981",
-      sparkData: [{ v: 42 }, { v: 48 }, { v: 50 }, { v: 54 }, { v: 52 }, { v: 58 }, { v: 61 }],
-    },
-    {
-      title: "Low Stock Alerts",
-      value: lowStockCount.toString(),
-      delta: "+8.1%",
-      positive: false,
-      sparkColor: "#f59e0b",
-      sparkData: [{ v: 22 }, { v: 20 }, { v: 24 }, { v: 27 }, { v: 29 }, { v: 31 }, { v: 32 }],
-    },
-    {
-      title: "Pending Draft POs",
-      value: pendingDraftPoCount === null ? "N/A" : pendingDraftPoCount.toString(),
-      delta:
-        pendingDraftPoCount === null ? "PO data unavailable" : `${pendingDraftPoCount} awaiting`,
-      positive: true,
-      sparkColor: "#10b981",
-      sparkData:
-        pendingDraftPoCount === null
-          ? [{ v: 3 }, { v: 4 }, { v: 4 }, { v: 5 }, { v: 6 }, { v: 7 }, { v: 7 }]
-          : [
-              { v: pendingDraftPoCount },
-              { v: pendingDraftPoCount },
-              { v: pendingDraftPoCount },
-              { v: pendingDraftPoCount },
-              { v: pendingDraftPoCount },
-              { v: pendingDraftPoCount },
-              { v: pendingDraftPoCount },
-            ],
-    },
-    {
-      title: "Near Expiry (30d)",
-      value: "N/A",
-      delta: "Expiry dates not tracked",
-      positive: true,
-      sparkColor: "#8b5cf6",
-      sparkData: [{ v: 22 }, { v: 20 }, { v: 19 }, { v: 19 }, { v: 18 }, { v: 18 }, { v: 18 }],
-    },
-  ];
 
   function handleExportInsights() {
     toast.success("Restocking insights export is queued.");
@@ -455,24 +697,27 @@ function DashboardPage() {
     return (
       <div className="space-y-6">
         <div className="rounded-[1.75rem] border border-border/60 bg-card/90 p-6 shadow-sm">
-          <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="grid gap-6 lg:grid-cols-[1.25fr_0.95fr]">
             <div className="space-y-4">
-              <Skeleton className="h-6 w-44 rounded-full" />
+              <Skeleton className="h-6 w-32 rounded-full" />
               <Skeleton className="h-10 w-full max-w-3xl rounded-xl" />
               <Skeleton className="h-5 w-full max-w-2xl rounded-xl" />
+              <div className="flex gap-2">
+                <Skeleton className="h-10 w-32 rounded-full" />
+                <Skeleton className="h-10 w-32 rounded-full" />
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-1">
-              <Skeleton className="h-12 rounded-xl" />
-              <Skeleton className="h-12 rounded-xl" />
+            <div className="grid gap-3 sm:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <Skeleton key={index} className="h-24 rounded-2xl" />
+              ))}
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-32 rounded-xl" />
-          ))}
+        <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+          <Skeleton className="h-[340px] rounded-[1.5rem]" />
+          <Skeleton className="h-[340px] rounded-[1.5rem]" />
         </div>
-        <Skeleton className="h-[220px] w-full rounded-[1.5rem]" />
       </div>
     );
   }
@@ -496,188 +741,129 @@ function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">{KPI_DATA_LIVE.map(renderKpi)}</div>
+    <div className="space-y-4">
+      <DashboardSnapshot
+        totalMedicines={totalMedicines}
+        lowStockCount={lowStockCount}
+        pendingDraftPoCount={pendingDraftPoCount}
+        restockAlertMedicines={restockAlertMedicines}
+        draftPurchaseOrders={pendingReviewPurchaseOrders.map((po) => ({
+          id: po.id,
+          poNumber: po.po_number,
+          createdAt: po.created_at,
+          itemCount: po.items.reduce((sum, item) => sum + item.order_quantity, 0),
+        }))}
+        expandedPanel={expandedPanel}
+        onTogglePanel={setExpandedPanel}
+      />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
-        <div className="space-y-4 md:col-span-7">
-          <Card className="interactive-card border-border/70 bg-card/95 shadow-sm">
-            <CardHeader className="pb-2">
+      <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+        <Card className="interactive-card overflow-hidden border-border/70 bg-card/95 shadow-sm">
+          <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
+            <div>
               <CardTitle className="text-base font-semibold text-slate-900">
-                Stock trajectory vs demand forecast
+                Forecast pressure
               </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-1">
-              <ResponsiveContainer width="100%" height={240}>
-                <ComposedChart data={forecastData}>
-                  <defs>
-                    <linearGradient id="actualGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#10b981" stopOpacity={0.18} />
-                      <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis
-                    dataKey="day"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 11, fill: "#94a3b8" }}
-                  />
-                  <YAxis
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 11, fill: "#94a3b8" }}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#ffffff",
-                      borderRadius: "8px",
-                      border: "1px solid #e2e8f0",
-                      color: "#0f172a",
-                      zIndex: 50,
-                    }}
-                    itemStyle={{ color: "#0f172a" }}
-                  />
-                  <Area
-                    dataKey="actual"
-                    name="Actual Stock"
-                    stroke="#10b981"
-                    strokeWidth={2}
-                    fill="url(#actualGrad)"
-                    dot={false}
-                    connectNulls={false}
-                    type="monotone"
-                  />
-                  <Line
-                    dataKey="predicted"
-                    name="Demand forecast"
-                    stroke="#38bdf8"
-                    strokeWidth={1.5}
-                    strokeDasharray="5 3"
-                    dot={false}
-                    connectNulls
-                    type="monotone"
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
+            </div>
+            <div className="rounded-full border border-border/70 bg-surface px-3 py-1 text-[11px] font-medium text-muted-foreground">
+              Updated live
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-1">
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={forecastData}>
+                <defs>
+                  <linearGradient id="actualGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.18} />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis
+                  dataKey="day"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 11, fill: "#94a3b8" }}
+                />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#ffffff",
+                    borderRadius: "8px",
+                    border: "1px solid #e2e8f0",
+                    color: "#0f172a",
+                    zIndex: 50,
+                  }}
+                  itemStyle={{ color: "#0f172a" }}
+                />
+                <Area
+                  dataKey="actual"
+                  name="Actual stock"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  fill="url(#actualGrad)"
+                  dot={false}
+                  connectNulls={false}
+                  type="monotone"
+                />
+                <Line
+                  dataKey="predicted"
+                  name="Demand forecast"
+                  stroke="#38bdf8"
+                  strokeWidth={1.5}
+                  strokeDasharray="5 3"
+                  dot={false}
+                  connectNulls
+                  type="monotone"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Card className="interactive-card border-border/70 bg-card/95 shadow-sm">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-slate-900">
-                  Days to depletion
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={170}>
-                  <BarChart layout="vertical" data={DEPLETION_DATA}>
-                    <CartesianGrid horizontal={false} stroke="#f1f5f9" />
-                    <XAxis
-                      type="number"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 11, fill: "#94a3b8" }}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="status"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 11, fill: "#94a3b8" }}
-                      width={72}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#ffffff",
-                        borderRadius: "8px",
-                        border: "1px solid #e2e8f0",
-                        color: "#0f172a",
-                        zIndex: 50,
-                      }}
-                      itemStyle={{ color: "#0f172a" }}
-                    />
-                    <Bar dataKey="daysLeft" radius={[0, 4, 4, 0]}>
-                      {DEPLETION_DATA.map(renderStatusBar)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card className="interactive-card border-border/70 bg-card/95 shadow-sm">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-slate-900">
-                  Category utilization mix
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {CATEGORY_PROGRESS.map(renderCategoryProgress)}
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        <div className="md:col-span-5">
-          <Card className="interactive-card border-border/70 bg-card/95 shadow-sm">
-            <CardHeader className="space-y-3">
-              <div className="flex items-start justify-between gap-3">
+            <div className="space-y-2">
+              <div className="flex items-end justify-between gap-3">
                 <div>
-                  <CardTitle className="text-base font-semibold text-slate-900">
-                    Restocking worklist
-                  </CardTitle>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Prioritized replenishment queue for pharmacy review.
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleExportInsights}
-                  className="gap-1.5 rounded-full border-border/80 bg-white/70 hover:bg-white"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Export
-                </Button>
-              </div>
-              <div className="grid grid-cols-12 gap-2">
-                <div className="col-span-12">
-                  <Select defaultValue="all">
-                    <SelectTrigger className="h-9 rounded-xl">
-                      <SelectValue placeholder="Filter" />
-                    </SelectTrigger>
-                    <SelectContent className="z-[60]">
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="critical">Critical</SelectItem>
-                      <SelectItem value="low">Low Stock</SelectItem>
-                      <SelectItem value="healthy">Healthy</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <h3 className="text-sm font-semibold text-slate-900">Category stock share</h3>
                 </div>
               </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-100">
-                      <TableHead className="whitespace-nowrap">SKU</TableHead>
-                      <TableHead className="whitespace-nowrap">Medicine Name</TableHead>
-                      <TableHead className="whitespace-nowrap text-right">Current Stock</TableHead>
-                      <TableHead className="whitespace-nowrap text-right">
-                        Predicted Demand 7d
-                      </TableHead>
-                      <TableHead className="whitespace-nowrap">Status</TableHead>
-                      <TableHead className="whitespace-nowrap text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>{worklistRows.map(renderTableRow)}</TableBody>
-                </Table>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                {categoryProgress.map((item) => (
+                  <div
+                    key={item.name}
+                    className="rounded-2xl border border-border/60 bg-background/70 p-3"
+                  >
+                    {renderCategoryProgress(item)}
+                  </div>
+                ))}
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="interactive-card flex flex-col overflow-hidden border-border/70 bg-card/95 shadow-sm"
+          id="restocking-worklist"
+        >
+          <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
+            <div>
+              <CardTitle className="text-base font-semibold text-slate-900">
+                Restocking priorities
+              </CardTitle>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportInsights}
+              className="gap-1.5 rounded-full border-border/80 bg-white/70 hover:bg-white"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export
+            </Button>
+          </CardHeader>
+          <CardContent className="max-h-[22rem] space-y-2 overflow-y-auto pt-1 pr-1">
+            {worklistRows.map(renderCompactWorklistRow)}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

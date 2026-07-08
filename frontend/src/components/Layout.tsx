@@ -1,4 +1,4 @@
-import { Outlet } from "@tanstack/react-router";
+import { Outlet, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Header } from "@/components/dashboard/Header";
@@ -12,6 +12,8 @@ import { ProfileSettingsProvider } from "@/lib/profile-settings-context";
  */
 export function Layout() {
   const isMobile = useIsMobile();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const isDashboard = pathname === "/";
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
@@ -52,12 +54,19 @@ export function Layout() {
         className={cn(
           "relative transition-[padding] duration-300 ease-out",
           sidebarOpen ? "lg:pl-64" : "lg:pl-0",
+          isDashboard ? "overflow-hidden" : "",
         )}
       >
         <ProfileSettingsProvider>
-          <div className="app-enter mx-auto flex min-h-screen max-w-[1600px] flex-col px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
+          <div
+            key={pathname}
+            className={cn(
+              "app-enter mx-auto flex min-h-screen max-w-[1600px] flex-col px-4 py-4 sm:px-6 lg:px-8 lg:py-6",
+              isDashboard ? "overflow-hidden" : "",
+            )}
+          >
             <Header />
-            <div className="flex-1 py-6 lg:py-8">
+            <div className={cn("flex-1 py-6 lg:py-8", isDashboard ? "overflow-hidden" : "")}>
               <Outlet />
             </div>
           </div>

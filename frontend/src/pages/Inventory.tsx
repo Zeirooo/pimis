@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { Pencil, Plus, Search, ShoppingCart, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -63,6 +63,8 @@ type MedicineRow = {
   supplierId: number;
 };
 
+type InventoryFocus = "all" | "alerts";
+
 const CATEGORY_OPTIONS = [
   "Analgesic / Antipyretic",
   "Antibiotic",
@@ -114,6 +116,9 @@ export function InventoryPage() {
   const [restockEvaluation, setRestockEvaluation] = useState<RestockingEvalResponse | null>(null);
   const [restockMedicineId, setRestockMedicineId] = useState<number | null>(null);
   const [restockSupplierId, setRestockSupplierId] = useState<string>("");
+  const dashboardSearch = useRouterState({
+    select: (state) => (state.location.search as { focus?: string } | undefined) ?? {},
+  });
 
   const { data: medicines = [], isLoading, isError } = useMedicines();
   const { data: suppliers = [] } = useSuppliers();
@@ -142,13 +147,22 @@ export function InventoryPage() {
     [medicines],
   );
 
+  const dashboardFocus: InventoryFocus = dashboardSearch.focus === "alerts" ? "alerts" : "all";
+
   const filteredMedicines = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return medicineRows;
-    return medicineRows.filter(
-      (m) => m.sku.toLowerCase().includes(q) || m.name.toLowerCase().includes(q),
-    );
-  }, [medicineRows, searchQuery]);
+
+    return medicineRows.filter((m) => {
+      const matchesQuery =
+        !q || m.sku.toLowerCase().includes(q) || m.name.toLowerCase().includes(q);
+      const matchesFocus = dashboardFocus === "all" ? true : m.currentStock <= m.safetyStock;
+
+      return matchesQuery && matchesFocus;
+    });
+  }, [dashboardFocus, medicineRows, searchQuery]);
+
+  const dashboardFocusLabel =
+    dashboardFocus === "alerts" ? "Showing medicines that need restock review." : null;
 
   const form = useForm<MedicineFormData>({
     resolver: zodResolver(medicineSchema),
@@ -282,12 +296,6 @@ export function InventoryPage() {
   return (
     <div className="mt-6 space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Medicine Inventory</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Track SKUs, safety stock, and replenishment from the live pharmacy database.
-          </p>
-        </div>
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:w-auto lg:justify-end">
           <div className="relative flex-1 min-w-0 lg:max-w-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -305,6 +313,21 @@ export function InventoryPage() {
           </Button>
         </div>
       </div>
+
+      {dashboardFocusLabel ? (
+        <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-amber-900">Dashboard drilldown</p>
+            <p className="text-xs text-amber-800">{dashboardFocusLabel}</p>
+          </div>
+          <Link
+            to="/inventory"
+            className="inline-flex items-center justify-center rounded-full border border-amber-200 bg-white/80 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-white"
+          >
+            Clear filter
+          </Link>
+        </div>
+      ) : null}
 
       <Card className="border-border bg-surface shadow-sm overflow-hidden">
         <CardHeader className="border-b border-border pb-4">
