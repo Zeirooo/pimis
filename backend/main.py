@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
@@ -24,11 +27,15 @@ from backend.database.models import (
     User,
     UserRole,
 )
+from backend.ml.registry import ModelRegistry
+from backend.ml.trainer import MODELS_DIR, train_batch
 from backend.routers.predictions import router as predictions_router
 from backend.routers.restocking import router as restocking_router
 from backend.routers.transactions import router as transactions_router
 from backend.schemas.schemas import MedicineCreate, MedicineResponse, MedicineUpdate
 from backend.schemas.schemas import SupplierResponse
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_origins(env_value: str | None) -> list[str]:
@@ -47,9 +54,19 @@ def _parse_origins(env_value: str | None) -> list[str]:
     return origins or ["http://localhost:3000"]
 
 
+async def _train_untrained_medicines(registry: ModelRegistry) -> None:
+    """Best-effort background training for medicines that have no model loaded yet."""
+
+    async with SessionLocal() as db:
+        result = await db.execute(select(Medicine.id))
+        medicine_ids = result.scalars().all()
+
+    await train_batch(SessionLocal, medicine_ids, registry, MODELS_DIR, skip_if_fully_loaded=True)
+
+
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Initialize database schema before serving requests."""
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Initialize database schema and the ML model registry before serving requests."""
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -57,7 +74,20 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     async with SessionLocal() as db:
         await _seed_demo_data(db)
 
+    os.makedirs(MODELS_DIR, exist_ok=True)
+
+    registry = ModelRegistry()
+    await registry.load_all(MODELS_DIR)
+    app.state.model_registry = registry
+
+    startup_training_task = asyncio.create_task(_train_untrained_medicines(registry))
+
     yield
+
+    startup_training_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await startup_training_task
+    await engine.dispose()
 
 
 app = FastAPI(title="PIMIS", version="0.1.0", lifespan=lifespan)
