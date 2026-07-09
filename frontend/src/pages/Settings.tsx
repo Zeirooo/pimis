@@ -162,7 +162,7 @@ export function SettingsPage() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="hover:bg-slate-100"
+                    className="hover:bg-muted"
                     onClick={() =>
                       showToast("Upload started", "Avatar upload action triggered (demo mode).")
                     }
@@ -323,7 +323,7 @@ export function SettingsPage() {
               <Button
                 type="button"
                 variant="outline"
-                className="hover:bg-slate-100"
+                className="hover:bg-muted"
                 onClick={() =>
                   showToast("Preferences reset", "Notification settings reset was triggered.")
                 }

@@ -1,5 +1,6 @@
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { createFileRoute, Link, Navigate, useRouterState } from "@tanstack/react-router";
+import { motion } from "framer-motion";
 import {
   Area,
   Line,
@@ -13,11 +14,16 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, TrendingDown, TrendingUp, Download } from "lucide-react";
+import { ArrowRight, Download } from "lucide-react";
 import { toast } from "sonner";
 import { useMedicines, usePredictions, usePurchaseOrders } from "@/hooks/use-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth";
+import { fadeInUp, listItem, staggerContainer } from "@/lib/motion";
+
+// Hoisted so the two summary-card buttons share one object identity instead
+// of allocating a fresh literal on every render.
+const SUMMARY_CARD_TAP = { scale: 0.98 };
 
 export const Route = createFileRoute("/")({
   component: DashboardRoute,
@@ -36,28 +42,10 @@ function DashboardRoute() {
 
 type StockStatus = "Critical" | "Low Stock" | "Overstock" | "Healthy";
 
-interface SparkPoint {
-  v: number;
-}
-
-interface KpiCard {
-  title: string;
-  value: string;
-  delta: string;
-  positive: boolean;
-  sparkColor: string;
-  sparkData: SparkPoint[];
-}
-
 interface ForecastPoint {
   day: string;
   actual: number | null;
   predicted: number;
-}
-
-interface DepletionPoint {
-  status: StockStatus;
-  daysLeft: number;
 }
 
 interface CategoryBar {
@@ -89,33 +77,22 @@ const FALLBACK_FORECAST_DATA: ForecastPoint[] = [
   { day: "D10", actual: null, predicted: 533 },
 ];
 
-const DEPLETION_DATA: DepletionPoint[] = [
-  { status: "Critical", daysLeft: 5 },
-  { status: "Low Stock", daysLeft: 14 },
-  { status: "Healthy", daysLeft: 36 },
-  { status: "Overstock", daysLeft: 52 },
-];
-
-const STATUS_CONFIG: Record<StockStatus, { label: string; className: string; barColor: string }> = {
+const STATUS_CONFIG: Record<StockStatus, { label: string; className: string }> = {
   Critical: {
     label: "Critical",
-    className: "bg-rose-100 text-rose-700 border-rose-200",
-    barColor: "#f43f5e",
+    className: "bg-critical-soft text-critical border-critical/20",
   },
   "Low Stock": {
     label: "Low Stock",
-    className: "bg-amber-100 text-amber-700 border-amber-200",
-    barColor: "#f59e0b",
+    className: "bg-warning-soft text-warning border-warning/20",
   },
   Overstock: {
     label: "Overstock",
-    className: "bg-sky-100 text-sky-700 border-sky-200",
-    barColor: "#0ea5e9",
+    className: "bg-info-soft text-info border-info/20",
   },
   Healthy: {
     label: "Healthy",
-    className: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    barColor: "#10b981",
+    className: "bg-success-soft text-success border-success/20",
   },
 };
 
@@ -181,88 +158,14 @@ const FALLBACK_TABLE_ROWS: ReportRow[] = [
   },
 ];
 
-function SparklineCard({ item, index }: { item: KpiCard; index: number }) {
-  const gradientId = `sparkGrad-${index}`;
-  const unavailable = item.value === "N/A";
-
-  return (
-    <Card className="interactive-card border-border/70 bg-card/95 shadow-sm">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-2">
-            <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{item.title}</p>
-            <p className="text-2xl font-semibold text-slate-900">{item.value}</p>
-            <div className="inline-flex items-center gap-1 text-xs">
-              {unavailable ? null : item.positive ? (
-                <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
-              ) : (
-                <TrendingDown className="h-3.5 w-3.5 text-amber-600" />
-              )}
-              <span
-                className={
-                  unavailable
-                    ? "text-slate-500"
-                    : item.positive
-                      ? "text-emerald-600"
-                      : "text-amber-600"
-                }
-              >
-                {item.delta}
-              </span>
-            </div>
-          </div>
-          <div className="h-8 w-24">
-            <ResponsiveContainer width="100%" height={32}>
-              <AreaChart data={item.sparkData}>
-                <defs>
-                  <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={item.sparkColor} stopOpacity={0.28} />
-                    <stop offset="95%" stopColor={item.sparkColor} stopOpacity={0.03} />
-                  </linearGradient>
-                </defs>
-                <Area
-                  type="monotone"
-                  dataKey="v"
-                  stroke={item.sparkColor}
-                  fill={`url(#${gradientId})`}
-                  strokeWidth={1.5}
-                  dot={false}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#ffffff",
-                    borderRadius: "8px",
-                    border: "1px solid #e2e8f0",
-                    color: "#0f172a",
-                    zIndex: 50,
-                  }}
-                  itemStyle={{ color: "#0f172a" }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function renderKpi(item: KpiCard, index: number) {
-  return <SparklineCard key={item.title} item={item} index={index} />;
-}
-
-function renderStatusBar(point: DepletionPoint) {
-  return null;
-}
-
 function renderCategoryProgress(item: CategoryBar) {
   return (
     <div key={item.name} className="space-y-1.5">
       <div className="flex items-center justify-between text-xs">
-        <span className="text-slate-500">{item.name}</span>
-        <span className="font-medium text-slate-700">{item.value}%</span>
+        <span className="text-muted-foreground">{item.name}</span>
+        <span className="font-medium text-foreground">{item.value}%</span>
       </div>
-      <div className="h-1.5 rounded-full bg-slate-100">
+      <div className="h-1.5 rounded-full bg-muted">
         <div className="h-1.5 rounded-full" style={item.style} />
       </div>
     </div>
@@ -277,32 +180,33 @@ function renderCompactWorklistRow(row: ReportRow) {
   }
 
   return (
-    <div
+    <motion.div
       key={row.sku}
+      variants={listItem}
       className="flex items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/70 px-3 py-2.5"
     >
       <div className="min-w-0 space-y-0.5">
         <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-medium text-slate-900">{row.name}</p>
+          <p className="truncate text-sm font-medium text-foreground">{row.name}</p>
           <Badge variant="outline" className={config.className}>
             {config.label}
           </Badge>
         </div>
-        <p className="truncate text-[11px] text-slate-500">
+        <p className="truncate text-[11px] text-muted-foreground">
           {row.sku} · {row.form}
         </p>
       </div>
 
       <div className="flex shrink-0 items-center gap-4 text-right">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Stock</div>
-          <div className="text-sm font-semibold tabular-nums text-slate-900">
+          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Stock</div>
+          <div className="text-sm font-semibold tabular-nums text-foreground">
             {row.currentStock}
           </div>
         </div>
         <div>
-          <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">7d need</div>
-          <div className="text-sm font-semibold tabular-nums text-slate-900">
+          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">7d need</div>
+          <div className="text-sm font-semibold tabular-nums text-foreground">
             {row.predictedDemand7d}
           </div>
         </div>
@@ -310,13 +214,13 @@ function renderCompactWorklistRow(row: ReportRow) {
           variant="ghost"
           size="sm"
           onClick={handleReviewClick}
-          className="gap-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+          className="gap-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <span>Review</span>
           <ArrowRight className="h-3.5 w-3.5" />
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -373,44 +277,53 @@ function DashboardSnapshot({
 
   return (
     <div className="relative">
-      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-12">
-        <SummaryCardLink
-          to="/inventory"
-          search={{ focus: "all" }}
-          className="order-2 border-emerald-200 bg-emerald-50/55 md:order-2 lg:col-span-3"
-        >
-          <div className="flex h-full flex-col gap-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                  Medicines
+      <motion.div
+        variants={staggerContainer}
+        initial="hidden"
+        animate="visible"
+        className="grid gap-3 md:grid-cols-2 lg:grid-cols-12"
+      >
+        <motion.div variants={listItem} className="order-2 md:order-2 lg:col-span-3">
+          <SummaryCardLink
+            to="/inventory"
+            search={{ focus: "all" }}
+            className="border-success/25 bg-success-soft/45"
+          >
+            <div className="flex h-full flex-col gap-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-success">
+                    Medicines
+                  </div>
+                </div>
+                <div className="rounded-full bg-success-soft px-2.5 py-0.5 text-[10px] font-semibold text-success">
+                  Inventory
                 </div>
               </div>
-              <div className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                Inventory
+
+              <div className="text-[2rem] font-semibold tabular-nums tracking-tight text-foreground lg:text-[2.15rem]">
+                {totalMedicines.toLocaleString()}
               </div>
             </div>
+          </SummaryCardLink>
+        </motion.div>
 
-            <div className="text-[2rem] font-semibold tabular-nums tracking-tight text-foreground lg:text-[2.15rem]">
-              {totalMedicines.toLocaleString()}
-            </div>
-          </div>
-        </SummaryCardLink>
-
-        <button
+        <motion.button
+          variants={listItem}
+          whileTap={SUMMARY_CARD_TAP}
           type="button"
           onClick={() => onTogglePanel(expandedPanel === "restock" ? null : "restock")}
-          className="order-1 rounded-2xl border border-amber-200 bg-amber-50/55 p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md md:order-1 lg:col-span-6"
+          className="order-1 rounded-2xl border border-warning/25 bg-warning-soft/45 p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 md:order-1 lg:col-span-6"
           aria-expanded={expandedPanel === "restock"}
         >
           <div className="flex h-full flex-col gap-3">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-warning">
                   Restock Alerts
                 </div>
               </div>
-              <div className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700">
+              <div className="rounded-full bg-warning-soft px-2.5 py-0.5 text-[10px] font-semibold text-warning">
                 Needs review
               </div>
             </div>
@@ -418,22 +331,24 @@ function DashboardSnapshot({
               {lowStockCount.toLocaleString()}
             </div>
           </div>
-        </button>
+        </motion.button>
 
-        <button
+        <motion.button
+          variants={listItem}
+          whileTap={SUMMARY_CARD_TAP}
           type="button"
           onClick={() => onTogglePanel(expandedPanel === "draftPos" ? null : "draftPos")}
-          className="order-3 rounded-2xl border border-sky-200 bg-sky-50/55 p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md md:order-3 lg:col-span-3"
+          className="order-3 rounded-2xl border border-info/25 bg-info-soft/45 p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 md:order-3 lg:col-span-3"
           aria-expanded={expandedPanel === "draftPos"}
         >
           <div className="flex h-full flex-col gap-3">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-info">
                   Draft PO
                 </div>
               </div>
-              <div className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[10px] font-semibold text-sky-700">
+              <div className="rounded-full bg-info-soft px-2.5 py-0.5 text-[10px] font-semibold text-info">
                 {pendingDraftPoCount === null ? "Unavailable" : "Awaiting"}
               </div>
             </div>
@@ -441,8 +356,8 @@ function DashboardSnapshot({
               {pendingDraftPoCount === null ? "N/A" : pendingDraftPoCount.toLocaleString()}
             </div>
           </div>
-        </button>
-      </div>
+        </motion.button>
+      </motion.div>
 
       {overlayOpen ? (
         <div
@@ -453,7 +368,7 @@ function DashboardSnapshot({
               <div className="p-3 sm:p-3.5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-warning">
                       Restock Alerts
                     </div>
                   </div>
@@ -472,7 +387,7 @@ function DashboardSnapshot({
                   {restockAlertMedicines.slice(0, 5).map((medicine) => (
                     <div
                       key={medicine.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50/35 px-3 py-2"
+                      className="flex items-center justify-between gap-3 rounded-xl border border-warning/15 bg-warning-soft/35 px-3 py-2"
                     >
                       <div className="min-w-0">
                         <div className="truncate text-[13px] font-medium text-foreground">
@@ -483,7 +398,7 @@ function DashboardSnapshot({
                         </div>
                       </div>
                       <div
-                        className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${medicine.isCritical ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}
+                        className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${medicine.isCritical ? "bg-critical-soft text-critical" : "bg-warning-soft text-warning"}`}
                       >
                         {medicine.isCritical ? "Critical" : "Below safety"}
                       </div>
@@ -508,7 +423,7 @@ function DashboardSnapshot({
               <div className="p-3 sm:p-3.5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground">
                       Draft Purchase Orders
                     </div>
                   </div>
@@ -527,7 +442,7 @@ function DashboardSnapshot({
                   {draftPurchaseOrders.slice(0, 5).map((po) => (
                     <div
                       key={po.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/75 px-3 py-2"
+                      className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/75 px-3 py-2"
                     >
                       <div className="min-w-0">
                         <div className="truncate text-[13px] font-medium text-foreground">
@@ -757,11 +672,17 @@ function DashboardPage() {
         onTogglePanel={setExpandedPanel}
       />
 
-      <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+      <motion.div
+        variants={staggerContainer}
+        initial="hidden"
+        animate="visible"
+        className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]"
+      >
+        <motion.div variants={fadeInUp}>
         <Card className="interactive-card overflow-hidden border-border/70 bg-card/95 shadow-sm">
           <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
             <div>
-              <CardTitle className="text-base font-semibold text-slate-900">
+              <CardTitle className="text-base font-semibold text-foreground">
                 Forecast pressure
               </CardTitle>
             </div>
@@ -822,7 +743,7 @@ function DashboardPage() {
             <div className="space-y-2">
               <div className="flex items-end justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-900">Category stock share</h3>
+                  <h3 className="text-sm font-semibold text-foreground">Category stock share</h3>
                 </div>
               </div>
 
@@ -839,14 +760,16 @@ function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+        </motion.div>
 
+        <motion.div variants={fadeInUp}>
         <Card
           className="interactive-card flex flex-col overflow-hidden border-border/70 bg-card/95 shadow-sm"
           id="restocking-worklist"
         >
           <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
             <div>
-              <CardTitle className="text-base font-semibold text-slate-900">
+              <CardTitle className="text-base font-semibold text-foreground">
                 Restocking priorities
               </CardTitle>
             </div>
@@ -861,10 +784,18 @@ function DashboardPage() {
             </Button>
           </CardHeader>
           <CardContent className="max-h-[22rem] space-y-2 overflow-y-auto pt-1 pr-1">
-            {worklistRows.map(renderCompactWorklistRow)}
+            <motion.div
+              variants={staggerContainer}
+              initial="hidden"
+              animate="visible"
+              className="space-y-2"
+            >
+              {worklistRows.map(renderCompactWorklistRow)}
+            </motion.div>
           </CardContent>
         </Card>
-      </div>
+        </motion.div>
+      </motion.div>
     </div>
   );
 }

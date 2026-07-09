@@ -124,11 +124,11 @@ const emptyAddForm: AddSupplierForm = {
 function StatusBadge({ status }: { status: SupplierStatus }) {
   const styles: Record<SupplierStatus, string> = {
     Active:
-      "border border-emerald-500/35 bg-emerald-500/12 text-emerald-900 shadow-none hover:bg-emerald-500/15 dark:text-emerald-100",
+      "border border-success/35 bg-success-soft text-success shadow-none hover:bg-success-soft dark:text-success",
     "On Review":
-      "border border-amber-500/35 bg-amber-500/12 text-amber-950 shadow-none hover:bg-amber-500/15 dark:text-amber-50",
+      "border border-warning/35 bg-warning-soft text-warning shadow-none hover:bg-warning-soft dark:text-warning",
     Inactive:
-      "border border-slate-400/40 bg-slate-500/10 text-slate-700 shadow-none hover:bg-slate-500/15 dark:text-slate-200",
+      "border border-border-strong bg-muted text-muted-foreground shadow-none hover:bg-muted dark:text-muted-foreground",
   };
 
   return (
@@ -499,7 +499,7 @@ export function SuppliersPage() {
                 type="button"
                 variant="outline"
                 onClick={() => handleAddDialogChange(false)}
-                className="hover:bg-slate-100"
+                className="hover:bg-muted"
               >
                 Cancel
               </Button>
