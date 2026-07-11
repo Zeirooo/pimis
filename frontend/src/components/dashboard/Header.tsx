@@ -119,7 +119,7 @@ export function Header(_: HeaderProps) {
                 aria-label="Open notifications"
               >
                 <Bell className="h-4 w-4" />
-                <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-rose-500" />
+                <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-critical" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-80">

@@ -1,9 +1,7 @@
+"""CRUD operations for generating and reading demand predictions."""
+
 from __future__ import annotations
 
-from collections import defaultdict
-from datetime import UTC, date
-from math import ceil
-from statistics import mean
 from typing import Sequence
 
 from fastapi import HTTPException
@@ -11,16 +9,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession as Session
 
 from backend.database.models import DemandPrediction, InventoryTransaction, Medicine, TransactionType
+from backend.ml.heuristic import heuristic_predict
+from backend.ml.predictor import predict_demand
+from backend.ml.registry import ModelRegistry
 from backend.schemas.predictions import PredictionCreate
 
 
-async def generate_demand_prediction(db: Session, req: PredictionCreate) -> DemandPrediction:
-    """
-    Generate and persist a baseline demand prediction for a medicine.
+async def generate_demand_prediction(db: Session, req: PredictionCreate, registry: ModelRegistry) -> DemandPrediction:
+    """Generate and persist a demand prediction for a medicine.
 
-    This is a deterministic baseline forecaster. It aggregates outgoing
-    transactions by day, estimates daily demand with a recency-weighted moving
-    average, and adds a small trend adjustment when recent demand is rising.
+    Tries the medicine's trained Prophet model first, then its scikit-learn
+    model, and falls back to the deterministic heuristic forecaster when
+    neither ML model is available (or there isn't enough history to have
+    trained one yet).
     """
 
     medicine = await db.get(Medicine, req.medicine_id)
@@ -32,32 +33,14 @@ async def generate_demand_prediction(db: Session, req: PredictionCreate) -> Dema
         InventoryTransaction.transaction_type == TransactionType.OUTGOING,
     )
     result = await db.execute(stmt)
-    records = result.scalars().all()
+    transactions = list(result.scalars().all())
 
-    if records:
-        daily_demand: dict[date, int] = defaultdict(int)
-        for record in records:
-            tx_time = record.timestamp
-            tx_date = tx_time.date() if tx_time.tzinfo else tx_time.replace(tzinfo=UTC).date()
-            daily_demand[tx_date] += record.quantity
+    predicted_demand, confidence_score = await predict_demand(req.medicine_id, req.target_date, registry, transactions)
 
-        ordered = [daily_demand[day] for day in sorted(daily_demand)]
-        recent = ordered[-7:]
-        previous = ordered[-14:-7]
-        daily_average = mean(recent)
-
-        if previous:
-            trend = max(mean(recent) - mean(previous), 0)
-        else:
-            trend = 0
-
-        days_ahead = max((req.target_date - date.today()).days, 1)
-        horizon = min(days_ahead, 14)
-        predicted_demand = max(1, ceil((daily_average + trend * 0.35) * horizon))
-        confidence_score = min(0.92, 0.55 + len(ordered) * 0.03)
-    else:
-        predicted_demand = max(medicine.safety_stock_level, 1)
-        confidence_score = 0.45
+    if predicted_demand <= 0:
+        predicted_demand, confidence_score = heuristic_predict(
+            transactions, req.target_date, medicine.safety_stock_level
+        )
 
     prediction = DemandPrediction(
         medicine_id=req.medicine_id,
@@ -83,4 +66,3 @@ async def get_prediction_history(db: Session, medicine_id: int) -> Sequence[Dema
     )
     result = await db.execute(stmt)
     return result.scalars().all()
-

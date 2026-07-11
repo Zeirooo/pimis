@@ -315,14 +315,14 @@ export function InventoryPage() {
       </div>
 
       {dashboardFocusLabel ? (
-        <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-2xl border border-warning/25 bg-warning-soft/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-amber-900">Dashboard drilldown</p>
-            <p className="text-xs text-amber-800">{dashboardFocusLabel}</p>
+            <p className="text-sm font-semibold text-warning">Dashboard drilldown</p>
+            <p className="text-xs text-warning/90">{dashboardFocusLabel}</p>
           </div>
           <Link
             to="/inventory"
-            className="inline-flex items-center justify-center rounded-full border border-amber-200 bg-white/80 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-white"
+            className="inline-flex items-center justify-center rounded-full border border-warning/25 bg-white/80 px-3 py-1.5 text-xs font-medium text-warning transition-colors hover:bg-white"
           >
             Clear filter
           </Link>
@@ -453,7 +453,7 @@ export function InventoryPage() {
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-red-500 hover:bg-red-500/10 hover:text-red-600"
+                            className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
                             aria-label={`Delete ${row.name}`}
                             onClick={() => handleDelete(row.sku)}
                           >
@@ -591,7 +591,7 @@ export function InventoryPage() {
                   type="button"
                   variant="outline"
                   onClick={() => handleDialogOpenChange(false)}
-                  className="hover:bg-slate-100"
+                  className="hover:bg-muted"
                 >
                   Cancel
                 </Button>

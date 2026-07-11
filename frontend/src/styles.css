@@ -39,6 +39,12 @@
   --color-critical: var(--critical);
   --color-critical-foreground: var(--critical-foreground);
   --color-critical-soft: var(--critical-soft);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-soft: var(--info-soft);
+  --color-ai: var(--ai);
+  --color-ai-foreground: var(--ai-foreground);
+  --color-ai-soft: var(--ai-soft);
   --color-gold: var(--gold);
   --color-gold-soft: var(--gold-soft);
   --color-sidebar: var(--sidebar);
@@ -57,6 +63,15 @@
 
 :root {
   --radius: 0.5rem;
+
+  /* Motion tokens — single source of truth for timing/easing across the app */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.17, 0.67, 0.24, 0.99);
+  --duration-fast: 150ms;
+  --duration-base: 220ms;
+  --duration-slow: 420ms;
+  --stagger-step: 45ms;
 
   /* PIMIS brand: clinical white, deep ink, pharmacy green, procurement amber */
   --background: oklch(0.982 0.006 170);
@@ -95,6 +110,14 @@
   --critical: oklch(0.5 0.22 25);
   --critical-foreground: oklch(0.99 0 0);
   --critical-soft: oklch(0.93 0.05 25);
+
+  --info: oklch(0.6 0.13 235); /* trust blue, inspired by sky-500 */
+  --info-foreground: oklch(0.99 0 0);
+  --info-soft: oklch(0.93 0.03 235);
+
+  --ai: oklch(0.55 0.2 300); /* AI-generated content marker, inspired by violet-600 */
+  --ai-foreground: oklch(0.99 0 0);
+  --ai-soft: oklch(0.93 0.045 300);
 
   --destructive: oklch(0.6 0.19 25);
   --destructive-foreground: oklch(0.99 0 0);
@@ -167,10 +190,6 @@
     letter-spacing: 0;
   }
 
-  .app-enter {
-    animation: app-enter 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-  }
-
   .buffering-ring {
     border-style: solid;
     border-width: 2px;
@@ -221,26 +240,86 @@
 
   .interactive-card {
     transition:
-      transform 180ms ease,
-      box-shadow 180ms ease,
-      border-color 180ms ease,
-      background-color 180ms ease;
+      transform var(--duration-base) var(--ease-out),
+      box-shadow var(--duration-base) var(--ease-out),
+      border-color var(--duration-base) var(--ease-out),
+      background-color var(--duration-base) var(--ease-out);
   }
 
   .interactive-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 14px 34px oklch(0.19 0.018 235 / 9%);
   }
+
+  .press-feedback {
+    transition: transform var(--duration-fast) var(--ease-out);
+  }
+
+  .press-feedback:active {
+    transform: scale(0.97);
+  }
+
+  /* Stagger-in list utility: apply .stagger-item to each child of a container,
+     children reveal in sequence via nth-child delay steps (up to 12). */
+  .stagger-item {
+    animation: stagger-item-enter var(--duration-slow) var(--ease-out) both;
+  }
 }
 
-@keyframes app-enter {
+@keyframes stagger-item-enter {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.985);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
+  }
+}
+
+.stagger-item:nth-child(1) {
+  animation-delay: calc(var(--stagger-step) * 0);
+}
+.stagger-item:nth-child(2) {
+  animation-delay: calc(var(--stagger-step) * 1);
+}
+.stagger-item:nth-child(3) {
+  animation-delay: calc(var(--stagger-step) * 2);
+}
+.stagger-item:nth-child(4) {
+  animation-delay: calc(var(--stagger-step) * 3);
+}
+.stagger-item:nth-child(5) {
+  animation-delay: calc(var(--stagger-step) * 4);
+}
+.stagger-item:nth-child(6) {
+  animation-delay: calc(var(--stagger-step) * 5);
+}
+.stagger-item:nth-child(7) {
+  animation-delay: calc(var(--stagger-step) * 6);
+}
+.stagger-item:nth-child(8) {
+  animation-delay: calc(var(--stagger-step) * 7);
+}
+.stagger-item:nth-child(n + 9) {
+  animation-delay: calc(var(--stagger-step) * 8);
+}
+
+/* Respect the user's OS-level motion preference across every custom animation
+   and transition in the app, including framer-motion (see lib/motion.ts). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .interactive-card:hover,
+  .press-feedback:active {
+    transform: none;
   }
 }
 

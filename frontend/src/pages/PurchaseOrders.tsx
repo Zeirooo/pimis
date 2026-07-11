@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import {
   Bot,
   CheckCircle2,
@@ -53,6 +54,7 @@ import {
   useEvaluateRestocking,
 } from "@/hooks/use-api";
 import { apiFetch } from "@/lib/api-client";
+import { listItem, staggerContainer } from "@/lib/motion";
 import { handleApiError } from "@/lib/toast-handlers";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { PurchaseOrderResponse } from "@/types/api.types";
@@ -192,11 +194,11 @@ function formatDisplayDate(isoDate: string): string {
 function StatusBadge({ status, onClick }: { status: POStatus; onClick?: () => void }) {
   const styles: Record<POStatus, string> = {
     "Pending AI":
-      "border border-violet-500/35 bg-violet-500/12 text-violet-800 shadow-none hover:bg-violet-500/15 dark:text-violet-200",
+      "border border-ai/35 bg-ai-soft text-ai shadow-none hover:bg-ai-soft dark:text-ai",
     Rejected:
       "border border-destructive/30 bg-destructive/10 text-destructive shadow-none hover:bg-destructive/15 dark:border-destructive/40 dark:bg-destructive/15 dark:text-destructive-foreground",
     Approved:
-      "border border-sky-500/35 bg-sky-500/12 text-sky-900 shadow-none hover:bg-sky-500/15 dark:text-sky-100",
+      "border border-info/35 bg-info-soft text-info shadow-none hover:bg-info-soft dark:text-info",
     Completed:
       "border border-success/30 bg-success-soft text-success shadow-none hover:bg-success-soft",
   };
@@ -948,36 +950,49 @@ export function PurchaseOrdersPage() {
         </div>
       </div>
 
-      <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          label="Draft Pending AI"
-          value={String(kpiDraftAi)}
-          subtext="Awaiting pharmacist review"
-          icon={Bot}
-          tone="neutral"
-        />
-        <KpiCard
-          label="Draft Pending approval"
-          value={String(kpiPending)}
-          subtext="Finance / clinical queue"
-          icon={FileClock}
-          tone="warning"
-        />
-        <KpiCard
-          label="Draft Approved (open)"
-          value={String(kpiApproved)}
-          subtext="Released to suppliers"
-          icon={ClipboardList}
-          tone="neutral"
-        />
-        <KpiCard
-          label="Completed (30d)"
-          value={String(kpiCompleted)}
-          subtext="Closed PO archive"
-          icon={CheckCircle2}
-          tone="success"
-        />
-      </section>
+      <motion.section
+        variants={staggerContainer}
+        initial="hidden"
+        animate="visible"
+        className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4"
+      >
+        <motion.div variants={listItem}>
+          <KpiCard
+            label="Draft Pending AI"
+            value={String(kpiDraftAi)}
+            subtext="Awaiting pharmacist review"
+            icon={Bot}
+            tone="neutral"
+          />
+        </motion.div>
+        <motion.div variants={listItem}>
+          <KpiCard
+            label="Draft Pending approval"
+            value={String(kpiPending)}
+            subtext="Finance / clinical queue"
+            icon={FileClock}
+            tone="warning"
+          />
+        </motion.div>
+        <motion.div variants={listItem}>
+          <KpiCard
+            label="Draft Approved (open)"
+            value={String(kpiApproved)}
+            subtext="Released to suppliers"
+            icon={ClipboardList}
+            tone="neutral"
+          />
+        </motion.div>
+        <motion.div variants={listItem}>
+          <KpiCard
+            label="Completed (30d)"
+            value={String(kpiCompleted)}
+            subtext="Closed PO archive"
+            icon={CheckCircle2}
+            tone="success"
+          />
+        </motion.div>
+      </motion.section>
 
       <Card className="border-border bg-surface shadow-sm overflow-hidden">
         <CardHeader className="border-b border-border pb-4">
@@ -1008,7 +1023,7 @@ export function PurchaseOrdersPage() {
                 </TabsTrigger>
                 <TabsTrigger value="draft-ai" className="gap-2">
                   Pending AI
-                  <span className="rounded-full bg-violet-500/12 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
+                  <span className="rounded-full bg-ai-soft px-2 py-0.5 text-[11px] font-semibold text-ai">
                     {kpiDraftAi}
                   </span>
                 </TabsTrigger>
@@ -1215,14 +1230,14 @@ export function PurchaseOrdersPage() {
 
             <TabsContent value="draft-ai" className="m-0 p-4 pt-4">
               <div className="space-y-4">
-                <div className="rounded-lg border border-violet-200 bg-violet-50/70 p-4 shadow-sm">
+                <div className="rounded-lg border border-ai/25 bg-ai-soft/70 p-4 shadow-sm">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <div className="flex items-center gap-2 text-sm font-semibold text-violet-900">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-ai">
                         <Bot className="h-4 w-4" />
                         Pending AI manager tab
                       </div>
-                      <p className="mt-1 text-sm text-violet-900/80">
+                      <p className="mt-1 text-sm text-ai/80">
                         Review the draft data, AI rationale, and safety-stock signal before
                         approving or rejecting.
                       </p>
@@ -1241,8 +1256,8 @@ export function PurchaseOrdersPage() {
 
                   {selectedSummaryPO ? (
                     <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-                      <div className="rounded-lg border border-violet-200 bg-white/80 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
+                      <div className="rounded-lg border border-ai/25 bg-white/80 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-ai">
                           Selected draft
                         </p>
                         <div className="mt-2 space-y-2 text-sm text-foreground">
@@ -1268,14 +1283,14 @@ export function PurchaseOrdersPage() {
                       </div>
 
                       {selectedDraftAiReason ? (
-                        <div className="rounded-lg border border-violet-200 bg-white/80 p-4">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
+                        <div className="rounded-lg border border-ai/25 bg-white/80 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-ai">
                             Inspection reason
                           </p>
-                          <p className="mt-2 text-sm text-violet-950">
+                          <p className="mt-2 text-sm text-ai">
                             {selectedDraftAiReason.summary}
                           </p>
-                          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-violet-900/80">
+                          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-ai/80">
                             {selectedDraftAiReason.factors.map((factor, idx) => (
                               <li key={`draft-reason-${idx}`}>{factor}</li>
                             ))}
@@ -1284,7 +1299,7 @@ export function PurchaseOrdersPage() {
                       ) : null}
                     </div>
                   ) : (
-                    <div className="mt-4 rounded-lg border border-dashed border-violet-200 bg-white/60 p-4 text-sm text-violet-900/80">
+                    <div className="mt-4 rounded-lg border border-dashed border-ai/25 bg-white/60 p-4 text-sm text-ai/80">
                       Click a Pending AI badge to inspect a specific draft.
                     </div>
                   )}

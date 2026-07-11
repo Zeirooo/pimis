@@ -1,10 +1,12 @@
 import { Outlet, useRouterState } from "@tanstack/react-router";
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Header } from "@/components/dashboard/Header";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
+import { pagePresence } from "@/lib/motion";
 import { ProfileSettingsProvider } from "@/lib/profile-settings-context";
 
 /**
@@ -59,15 +61,35 @@ export function Layout() {
       >
         <ProfileSettingsProvider>
           <div
-            key={pathname}
             className={cn(
-              "app-enter mx-auto flex min-h-screen max-w-[1600px] flex-col px-4 py-4 sm:px-6 lg:px-8 lg:py-6",
+              "mx-auto flex min-h-screen max-w-[1600px] flex-col px-4 py-4 sm:px-6 lg:px-8 lg:py-6",
               isDashboard ? "overflow-hidden" : "",
             )}
           >
+            {/* Header lives outside the route-keyed motion node so navigating
+                doesn't unmount it (which would close the notifications menu
+                and re-run its profile subscription every route change). */}
             <Header />
-            <div className={cn("flex-1 py-6 lg:py-8", isDashboard ? "overflow-hidden" : "")}>
-              <Outlet />
+            <div
+              className={cn(
+                "relative flex-1 py-6 lg:py-8",
+                isDashboard ? "overflow-hidden" : "",
+              )}
+            >
+              {/* popLayout lets the new route mount immediately instead of
+                  waiting ~150ms for the outgoing route's exit animation,
+                  so data fetching for the new page starts right away. */}
+              <AnimatePresence mode="popLayout" initial={false}>
+                <motion.div
+                  key={pathname}
+                  variants={pagePresence}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                >
+                  <Outlet />
+                </motion.div>
+              </AnimatePresence>
             </div>
           </div>
         </ProfileSettingsProvider>

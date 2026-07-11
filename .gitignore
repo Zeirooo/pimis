@@ -44,6 +44,7 @@ backend/.env
 backend/.env.local
 backend/venv/
 backend/__pycache__/
+backend/models/*.pkl
 
 # Databases
 *.db

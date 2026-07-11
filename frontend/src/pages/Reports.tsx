@@ -188,7 +188,7 @@ const KPI_METRICS: MetricCard[] = [
     value: "92.4%",
     subtext: "Baseline model from transaction history",
     icon: Activity,
-    iconClassName: "text-sky-600 dark:text-sky-400",
+    iconClassName: "text-info dark:text-info",
   },
   {
     id: "risk-value",
@@ -203,7 +203,7 @@ const KPI_METRICS: MetricCard[] = [
     title: "Inventory Turnover Ratio",
     value: "4.2x",
     icon: TrendingUp,
-    iconClassName: "text-emerald-600 dark:text-emerald-400",
+    iconClassName: "text-success dark:text-success",
   },
 ];
 
@@ -239,7 +239,7 @@ function VarianceBadge({ variance }: { variance: number }) {
   return (
     <Badge
       variant="outline"
-      className="border-emerald-500/35 bg-emerald-500/10 text-emerald-900 tabular-nums dark:text-emerald-100"
+      className="border-success/35 bg-success-soft text-success tabular-nums dark:text-success"
     >
       +{variance.toLocaleString("id-ID")}
     </Badge>
@@ -294,7 +294,7 @@ export function ReportsPage() {
       value: "92.4%",
       subtext: "Baseline model from transaction history",
       icon: Activity,
-      iconClassName: "text-sky-600 dark:text-sky-400",
+      iconClassName: "text-info dark:text-info",
     },
     {
       id: "risk-value",
@@ -313,7 +313,7 @@ export function ReportsPage() {
       title: "Inventory Turnover Ratio",
       value: "4.2x",
       icon: TrendingUp,
-      iconClassName: "text-emerald-600 dark:text-emerald-400",
+      iconClassName: "text-success dark:text-success",
     },
   ];
 
@@ -362,7 +362,7 @@ export function ReportsPage() {
             type="button"
             variant="outline"
             onClick={handleDateRangeClick}
-            className="gap-2 bg-surface border-border hover:bg-slate-100"
+            className="gap-2 bg-surface border-border hover:bg-muted"
           >
             <Calendar className="h-4 w-4" />
             Last 30 Days

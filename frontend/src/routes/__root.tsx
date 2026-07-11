@@ -7,6 +7,7 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MotionConfig } from "framer-motion";
 import { useState } from "react";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -96,10 +97,12 @@ function RootShell({ children }: { children: React.ReactNode }) {
 function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <AuthGate />
-      </AuthProvider>
-      <Toaster richColors position="top-right" />
+      <MotionConfig reducedMotion="user">
+        <AuthProvider>
+          <AuthGate />
+        </AuthProvider>
+        <Toaster richColors position="top-right" />
+      </MotionConfig>
     </QueryClientProvider>
   );
 }
