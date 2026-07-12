@@ -71,10 +71,7 @@ export function Layout() {
                 and re-run its profile subscription every route change). */}
             <Header />
             <div
-              className={cn(
-                "relative flex-1 py-6 lg:py-8",
-                isDashboard ? "overflow-hidden" : "",
-              )}
+              className={cn("relative flex-1 py-6 lg:py-8", isDashboard ? "overflow-hidden" : "")}
             >
               {/* popLayout lets the new route mount immediately instead of
                   waiting ~150ms for the outgoing route's exit animation,
