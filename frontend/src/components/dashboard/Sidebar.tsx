@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, Package, ShoppingCart, Truck, Settings, Pill, X } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingCart, Truck, Settings, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -39,8 +39,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <div className="border-b border-white/8 px-6 py-6">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-black/20">
-                <Pill className="h-5 w-5 text-primary-foreground" />
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-primary/10 shadow-lg shadow-black/20 ring-1 ring-white/10">
+                <img src="/PIMIS_icon.png" alt="PIMIS icon" className="h-7 w-7 object-contain" />
               </div>
               <div>
                 <div className="text-lg font-semibold leading-none">PIMIS</div>
@@ -75,18 +75,28 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               <Link
                 key={item.label}
                 to={item.to}
-                className={[
-                  "group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all",
-                  isActive
-                    ? "bg-sidebar-active text-sidebar-active-foreground shadow-md shadow-black/10"
-                    : "text-sidebar-foreground/80 hover:bg-white/6 hover:text-sidebar-foreground",
-                ].join(" ")}
-              >
-                {isActive && (
-                  <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r-full bg-gold" />
+                className={cn(
+                  "group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-colors duration-150",
+                  !isActive && "hover:bg-white/6",
                 )}
-                <Icon className="h-4 w-4 shrink-0" />
-                <span>{item.label}</span>
+              >
+                {isActive ? (
+                  <span className="absolute inset-0 rounded-2xl bg-sidebar-active shadow-md shadow-black/10" />
+                ) : null}
+                {isActive && (
+                  <span className="absolute left-0 top-1.5 bottom-1.5 z-10 w-1 rounded-r-full bg-gold" />
+                )}
+                <span
+                  className={cn(
+                    "relative z-10 flex items-center gap-3",
+                    isActive
+                      ? "text-sidebar-active-foreground"
+                      : "text-sidebar-foreground/80 group-hover:text-sidebar-foreground",
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span>{item.label}</span>
+                </span>
               </Link>
             );
           })}

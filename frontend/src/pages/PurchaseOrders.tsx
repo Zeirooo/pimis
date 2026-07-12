@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { motion } from "framer-motion";
 import {
   Bot,
   CheckCircle2,
@@ -54,7 +53,6 @@ import {
   useEvaluateRestocking,
 } from "@/hooks/use-api";
 import { apiFetch } from "@/lib/api-client";
-import { listItem, staggerContainer } from "@/lib/motion";
 import { handleApiError } from "@/lib/toast-handlers";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { PurchaseOrderResponse } from "@/types/api.types";
@@ -950,13 +948,8 @@ export function PurchaseOrdersPage() {
         </div>
       </div>
 
-      <motion.section
-        variants={staggerContainer}
-        initial="hidden"
-        animate="visible"
-        className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4"
-      >
-        <motion.div variants={listItem}>
+      <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <div>
           <KpiCard
             label="Draft Pending AI"
             value={String(kpiDraftAi)}
@@ -964,8 +957,8 @@ export function PurchaseOrdersPage() {
             icon={Bot}
             tone="neutral"
           />
-        </motion.div>
-        <motion.div variants={listItem}>
+        </div>
+        <div>
           <KpiCard
             label="Draft Pending approval"
             value={String(kpiPending)}
@@ -973,8 +966,8 @@ export function PurchaseOrdersPage() {
             icon={FileClock}
             tone="warning"
           />
-        </motion.div>
-        <motion.div variants={listItem}>
+        </div>
+        <div>
           <KpiCard
             label="Draft Approved (open)"
             value={String(kpiApproved)}
@@ -982,8 +975,8 @@ export function PurchaseOrdersPage() {
             icon={ClipboardList}
             tone="neutral"
           />
-        </motion.div>
-        <motion.div variants={listItem}>
+        </div>
+        <div>
           <KpiCard
             label="Completed (30d)"
             value={String(kpiCompleted)}
@@ -991,8 +984,8 @@ export function PurchaseOrdersPage() {
             icon={CheckCircle2}
             tone="success"
           />
-        </motion.div>
-      </motion.section>
+        </div>
+      </section>
 
       <Card className="border-border bg-surface shadow-sm overflow-hidden">
         <CardHeader className="border-b border-border pb-4">
@@ -1287,9 +1280,7 @@ export function PurchaseOrdersPage() {
                           <p className="text-xs font-semibold uppercase tracking-wide text-ai">
                             Inspection reason
                           </p>
-                          <p className="mt-2 text-sm text-ai">
-                            {selectedDraftAiReason.summary}
-                          </p>
+                          <p className="mt-2 text-sm text-ai">{selectedDraftAiReason.summary}</p>
                           <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-ai/80">
                             {selectedDraftAiReason.factors.map((factor, idx) => (
                               <li key={`draft-reason-${idx}`}>{factor}</li>

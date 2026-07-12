@@ -7,7 +7,6 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MotionConfig } from "framer-motion";
 import { useState } from "react";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -70,6 +69,15 @@ export const Route = createRootRoute({
     ],
     links: [
       {
+        rel: "icon",
+        type: "image/png",
+        href: "/PIMIS_icon.png",
+      },
+      {
+        rel: "apple-touch-icon",
+        href: "/PIMIS_icon.png",
+      },
+      {
         rel: "stylesheet",
         href: appCss,
       },
@@ -97,12 +105,10 @@ function RootShell({ children }: { children: React.ReactNode }) {
 function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
-      <MotionConfig reducedMotion="user">
-        <AuthProvider>
-          <AuthGate />
-        </AuthProvider>
-        <Toaster richColors position="top-right" />
-      </MotionConfig>
+      <AuthProvider>
+        <AuthGate />
+      </AuthProvider>
+      <Toaster richColors position="top-right" />
     </QueryClientProvider>
   );
 }
@@ -164,9 +170,7 @@ function LoginScreen() {
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[30rem] items-center justify-center">
         <Card className="login-panel w-full overflow-hidden border border-border/60 bg-surface/96 px-6 py-8 shadow-[0_28px_90px_oklch(0.19_0.018_235/16%)] backdrop-blur-sm sm:px-8 sm:py-10">
           <div className="mx-auto mb-6 flex w-full max-w-[260px] justify-center">
-            <div className="flex h-18 w-18 items-center justify-center rounded-full border-2 border-dashed border-primary/50 bg-primary/5 text-sm font-semibold tracking-[0.22em] text-primary">
-              PIMIS
-            </div>
+            <img src="/PIMIS.png" alt="PIMIS logo" className="h-20 w-20 object-contain" />
           </div>
 
           <div className="space-y-2 text-center">
