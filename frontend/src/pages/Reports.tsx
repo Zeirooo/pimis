@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Activity, AlertTriangle, Calendar, DollarSign, Download, TrendingUp } from "lucide-react";
 import {
@@ -17,13 +17,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -34,8 +27,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { useMedicines } from "@/hooks/use-api";
+import { useMedicines, useReportSummary, useTrainAllModels } from "@/hooks/use-api";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { PredictionDataSource } from "@/types/api.types";
 
 /** KPI tile definition for the analytics header strip */
 export interface MetricCard {
@@ -78,7 +72,7 @@ export type ReportRow =
       potentialFinancialLossIdr: number;
     };
 
-const overviewData: ChartData[] = [
+const FALLBACK_OVERVIEW_DATA: ChartData[] = [
   { name: "Cardiovascular", fastMoving: 840, slowMoving: 190 },
   { name: "Antibiotic", fastMoving: 620, slowMoving: 260 },
   { name: "Metabolic", fastMoving: 510, slowMoving: 140 },
@@ -86,7 +80,7 @@ const overviewData: ChartData[] = [
   { name: "Respiratory", fastMoving: 430, slowMoving: 175 },
 ];
 
-const mlData: ChartData[] = [
+const FALLBACK_ML_DATA: ChartData[] = [
   { name: "Mon", actualConsumption: 112, predictedDemand: 108 },
   { name: "Tue", actualConsumption: 124, predictedDemand: 121 },
   { name: "Wed", actualConsumption: 118, predictedDemand: 126 },
@@ -94,41 +88,6 @@ const mlData: ChartData[] = [
   { name: "Fri", actualConsumption: 128, predictedDemand: 131 },
   { name: "Sat", actualConsumption: 96, predictedDemand: 99 },
   { name: "Sun", actualConsumption: 88, predictedDemand: 91 },
-];
-
-const ANOMALY_ROWS: Extract<ReportRow, { kind: "anomaly" }>[] = [
-  {
-    kind: "anomaly",
-    id: "an-01",
-    medicine: "Paracetamol 500mg",
-    expectedStock: 420,
-    actualStock: 312,
-    variance: -108,
-  },
-  {
-    kind: "anomaly",
-    id: "an-02",
-    medicine: "Ceftriaxone 1g",
-    expectedStock: 64,
-    actualStock: 22,
-    variance: -42,
-  },
-  {
-    kind: "anomaly",
-    id: "an-03",
-    medicine: "Metformin 500mg",
-    expectedStock: 280,
-    actualStock: 402,
-    variance: 122,
-  },
-  {
-    kind: "anomaly",
-    id: "an-04",
-    medicine: "Omeprazole 20mg",
-    expectedStock: 150,
-    actualStock: 118,
-    variance: -32,
-  },
 ];
 
 const FINANCIAL_ROWS: Extract<ReportRow, { kind: "financial" }>[] = [
@@ -171,39 +130,6 @@ const FINANCIAL_ROWS: Extract<ReportRow, { kind: "financial" }>[] = [
     expiryDate: "2026-04-28",
     remainingQty: 320,
     potentialFinancialLossIdr: 850_000,
-  },
-];
-
-const KPI_METRICS: MetricCard[] = [
-  {
-    id: "inv-value",
-    title: "Total Inventory Value",
-    value: "Rp 145.000.000",
-    icon: DollarSign,
-    iconClassName: "text-primary",
-  },
-  {
-    id: "ml-accuracy",
-    title: "ML Forecast Accuracy",
-    value: "92.4%",
-    subtext: "Baseline model from transaction history",
-    icon: Activity,
-    iconClassName: "text-info dark:text-info",
-  },
-  {
-    id: "risk-value",
-    title: "Risk Value (Expiring < 90 Days)",
-    value: "Rp 8.500.000",
-    icon: AlertTriangle,
-    iconClassName: "text-destructive",
-    valueClassName: "text-destructive",
-  },
-  {
-    id: "turnover",
-    title: "Inventory Turnover Ratio",
-    value: "4.2x",
-    icon: TrendingUp,
-    iconClassName: "text-success dark:text-success",
   },
 ];
 
@@ -255,55 +181,97 @@ function ChartFallback({ label }: { label: string }) {
   );
 }
 
+function formatSourceLabel(source: PredictionDataSource): string {
+  if (source === "ml") return "ML";
+  if (source === "fallback") return "Fallback";
+  return "Demo";
+}
+
+function sourceBadgeClass(source: PredictionDataSource): string {
+  if (source === "ml") return "border-success/30 bg-success/10 text-success";
+  if (source === "fallback") return "border-amber-500/30 bg-amber-500/10 text-amber-700";
+  return "border-slate-300 bg-slate-100 text-slate-600";
+}
+
 export function ReportsPage() {
-  const [reportScope, setReportScope] = useState("hospital-wide");
-  const { data: medicines = [], isLoading } = useMedicines();
+  const { data: medicines = [], isLoading: medicinesLoading } = useMedicines();
+  const {
+    data: reportSummary,
+    isLoading: reportLoading,
+    isError: reportError,
+    refetch: refetchReport,
+  } = useReportSummary();
+  const trainAllModels = useTrainAllModels();
 
-  const totalInventoryValue = medicines.reduce((acc, m) => acc + m.current_stock * 15000, 0);
+  const totalInventoryValue = medicines.reduce(
+    (acc, medicine) => acc + medicine.current_stock * 15000,
+    0,
+  );
   const riskValue = medicines
-    .filter((m) => m.current_stock <= m.safety_stock_level)
-    .reduce((acc, m) => acc + m.current_stock * 15000, 0);
+    .filter((medicine) => medicine.current_stock <= medicine.safety_stock_level)
+    .reduce((acc, medicine) => acc + medicine.current_stock * 15000, 0);
+  const inventorySource = reportError || !reportSummary ? "demo" : reportSummary.data_source;
 
-  const ANOMALY_ROWS = medicines
-    .filter((m) => m.current_stock !== m.safety_stock_level)
+  const anomalies = medicines
+    .filter((medicine) => medicine.current_stock !== medicine.safety_stock_level)
     .slice(0, 4)
-    .map((m, i) => ({
+    .map((medicine, index) => ({
       kind: "anomaly" as const,
-      id: `an-${i + 1}`,
-      medicine: m.name,
-      expectedStock: m.safety_stock_level,
-      actualStock: m.current_stock,
-      variance: m.current_stock - m.safety_stock_level,
+      id: `an-${index + 1}`,
+      medicine: medicine.name,
+      expectedStock: medicine.safety_stock_level,
+      actualStock: medicine.current_stock,
+      variance: medicine.current_stock - medicine.safety_stock_level,
     }));
 
-  const KPI_METRICS_LIVE: MetricCard[] = [
+  const overviewChartData = useMemo<ChartData[]>(() => {
+    if (!reportSummary?.overview.length) {
+      return FALLBACK_OVERVIEW_DATA;
+    }
+
+    return reportSummary.overview.map((item) => ({
+      name: item.name,
+      fastMoving: item.fast_moving,
+      slowMoving: item.slow_moving,
+    }));
+  }, [reportSummary]);
+
+  const mlChartData = useMemo<ChartData[]>(() => {
+    if (!reportSummary?.ml_series.length) {
+      return FALLBACK_ML_DATA;
+    }
+
+    return reportSummary.ml_series.map((item) => ({
+      name: item.name,
+      actualConsumption: item.actual_consumption,
+      predictedDemand: item.predicted_demand,
+    }));
+  }, [reportSummary]);
+
+  const kpiMetrics: MetricCard[] = [
     {
       id: "inv-value",
       title: "Total Inventory Value",
-      value: new Intl.NumberFormat("id-ID", {
-        style: "currency",
-        currency: "IDR",
-        maximumFractionDigits: 0,
-      }).format(totalInventoryValue),
+      value: formatIdr(reportSummary?.inventory_value ?? totalInventoryValue),
       icon: DollarSign,
       iconClassName: "text-primary",
     },
     {
       id: "ml-accuracy",
       title: "ML Forecast Accuracy",
-      value: "92.4%",
-      subtext: "Baseline model from transaction history",
+      value:
+        reportSummary && !reportError ? `${reportSummary.forecast_accuracy.toFixed(1)}%` : "Demo",
+      subtext:
+        reportSummary && !reportError
+          ? `${formatSourceLabel(reportSummary.data_source)} data from live transaction history`
+          : "Waiting for backend ML output",
       icon: Activity,
       iconClassName: "text-info dark:text-info",
     },
     {
       id: "risk-value",
       title: "Risk Value (Expiring < 90 Days)",
-      value: new Intl.NumberFormat("id-ID", {
-        style: "currency",
-        currency: "IDR",
-        maximumFractionDigits: 0,
-      }).format(riskValue),
+      value: formatIdr(reportSummary?.risk_value ?? riskValue),
       icon: AlertTriangle,
       iconClassName: "text-destructive",
       valueClassName: "text-destructive",
@@ -311,27 +279,11 @@ export function ReportsPage() {
     {
       id: "turnover",
       title: "Inventory Turnover Ratio",
-      value: "4.2x",
+      value: reportSummary ? `${reportSummary.turnover_ratio.toFixed(1)}x` : "0.0x",
       icon: TrendingUp,
       iconClassName: "text-success dark:text-success",
     },
   ];
-
-  const safeOverview = useMemo(
-    () =>
-      overviewData.filter(
-        (d) => typeof d.fastMoving === "number" && typeof d.slowMoving === "number",
-      ),
-    [],
-  );
-
-  const safeMl = useMemo(
-    () =>
-      mlData.filter(
-        (d) => typeof d.actualConsumption === "number" && typeof d.predictedDemand === "number",
-      ),
-    [],
-  );
 
   function handleDateRangeClick() {
     toast.success("Last 30 Days filter toggled.");
@@ -341,23 +293,24 @@ export function ReportsPage() {
     toast.success("Report export has been triggered.");
   }
 
+  function handleTrainModels() {
+    trainAllModels.mutate(undefined, {
+      onSuccess: (result) => {
+        toast.success("Training started", {
+          description: `${result.medicine_count} medicines were queued for live model refresh.`,
+        });
+        void refetchReport();
+      },
+      onError: () => {
+        toast.error("Unable to start model training right now.");
+      },
+    });
+  }
+
   return (
     <div className="mt-6 space-y-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
-          <Select value={reportScope} onValueChange={setReportScope}>
-            <SelectTrigger
-              className="w-full bg-surface border-border sm:w-[200px]"
-              aria-label="Report scope"
-            >
-              <SelectValue placeholder="Scope" />
-            </SelectTrigger>
-            <SelectContent className="z-[60]">
-              <SelectItem value="hospital-wide">Hospital-wide</SelectItem>
-              <SelectItem value="inpatient">Inpatient pharmacy</SelectItem>
-              <SelectItem value="outpatient">Outpatient pharmacy</SelectItem>
-            </SelectContent>
-          </Select>
           <Button
             type="button"
             variant="outline"
@@ -367,19 +320,35 @@ export function ReportsPage() {
             <Calendar className="h-4 w-4" />
             Last 30 Days
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleTrainModels}
+            disabled={trainAllModels.isPending}
+            className="gap-2 bg-surface border-border hover:bg-muted"
+          >
+            <Activity className="h-4 w-4" />
+            {trainAllModels.isPending ? "Training models..." : "Train Models"}
+          </Button>
           <Button type="button" onClick={handleExportClick} className="gap-2 shadow-sm">
             <Download className="h-4 w-4" />
             Export Report
           </Button>
         </div>
+        <Badge
+          variant="outline"
+          className={cn("w-fit px-3 py-1 text-xs font-semibold", sourceBadgeClass(inventorySource))}
+        >
+          {formatSourceLabel(inventorySource)} data
+        </Badge>
       </div>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {isLoading
+        {medicinesLoading || reportLoading
           ? Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-28 rounded-xl" />
             ))
-          : KPI_METRICS_LIVE.map((metric) => {
+          : kpiMetrics.map((metric) => {
               const Icon = metric.icon;
               return (
                 <Card
@@ -442,10 +411,13 @@ export function ReportsPage() {
               </p>
             </CardHeader>
             <CardContent className="pt-6">
-              {safeOverview.length > 0 ? (
+              {overviewChartData.length > 0 ? (
                 <div className="h-[min(360px,50vh)] w-full min-h-[240px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={safeOverview} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <BarChart
+                      data={overviewChartData}
+                      margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                    >
                       <CartesianGrid strokeDasharray="3 3" className="stroke-border/60" />
                       <XAxis
                         dataKey="name"
@@ -516,7 +488,7 @@ export function ReportsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {isLoading
+                    {medicinesLoading || reportLoading
                       ? Array.from({ length: 4 }).map((_, i) => (
                           <TableRow key={i} className="border-border">
                             {["pl-6", "", "", "pr-6 text-right"].map((cls, j) => (
@@ -526,7 +498,7 @@ export function ReportsPage() {
                             ))}
                           </TableRow>
                         ))
-                      : ANOMALY_ROWS.map((row) => (
+                      : anomalies.map((row) => (
                           <TableRow key={row.id} className="border-border">
                             <TableCell className="pl-6 font-medium text-foreground">
                               {row.medicine}
@@ -552,16 +524,34 @@ export function ReportsPage() {
         <TabsContent value="ml" className="mt-0 space-y-6 focus-visible:outline-none">
           <Card className="border-border bg-surface shadow-sm">
             <CardHeader className="border-b border-border">
-              <CardTitle className="text-lg font-bold tracking-tight">Predictive engine</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Seven-day inpatient consumption vs modelled demand from transaction history.
-              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle className="text-lg font-bold tracking-tight">
+                    Predictive engine
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Seven-day inpatient consumption vs modelled demand from transaction history.
+                  </p>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "w-fit px-3 py-1 text-xs font-semibold",
+                    sourceBadgeClass(inventorySource),
+                  )}
+                >
+                  {formatSourceLabel(inventorySource)} output
+                </Badge>
+              </div>
             </CardHeader>
             <CardContent className="pt-6">
-              {safeMl.length > 0 ? (
+              {mlChartData.length > 0 ? (
                 <div className="h-[min(360px,50vh)] w-full min-h-[240px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={safeMl} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                    <LineChart
+                      data={mlChartData}
+                      margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+                    >
                       <CartesianGrid strokeDasharray="3 3" className="stroke-border/60" />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} width={36} />

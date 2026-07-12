@@ -71,11 +71,11 @@ export const Route = createRootRoute({
       {
         rel: "icon",
         type: "image/png",
-        href: "/PIMIS_icon.png",
+        href: "/PIMIS.png",
       },
       {
         rel: "apple-touch-icon",
-        href: "/PIMIS_icon.png",
+        href: "/PIMIS.png",
       },
       {
         rel: "stylesheet",
@@ -170,7 +170,9 @@ function LoginScreen() {
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[30rem] items-center justify-center">
         <Card className="login-panel w-full overflow-hidden border border-border/60 bg-surface/96 px-6 py-8 shadow-[0_28px_90px_oklch(0.19_0.018_235/16%)] backdrop-blur-sm sm:px-8 sm:py-10">
           <div className="mx-auto mb-6 flex w-full max-w-[260px] justify-center">
-            <img src="/PIMIS.png" alt="PIMIS logo" className="h-20 w-20 object-contain" />
+            <div className="h-20 w-20 overflow-hidden rounded-full ring-1 ring-primary/20">
+              <img src="/PIMIS.png" alt="PIMIS logo" className="h-full w-full object-cover" />
+            </div>
           </div>
 
           <div className="space-y-2 text-center">

@@ -34,8 +34,8 @@ import { toast } from "sonner";
 import {
   useEvaluateRestocking,
   useMedicines,
-  usePredictions,
   usePurchaseOrders,
+  useReportSummary,
   useSuppliers,
 } from "@/hooks/use-api";
 import { ReportsPage } from "@/pages/Reports";
@@ -61,8 +61,10 @@ function DashboardRoute() {
 
 type StockStatus = "Critical" | "Low Stock" | "Overstock" | "Healthy";
 
-interface SparkPoint {
-  v: number;
+interface ForecastPoint {
+  day: string;
+  actual: number | null;
+  predicted: number;
 }
 
 interface KpiCard {
@@ -71,13 +73,7 @@ interface KpiCard {
   delta: string;
   positive: boolean;
   sparkColor: string;
-  sparkData: SparkPoint[];
-}
-
-interface ForecastPoint {
-  day: string;
-  actual: number | null;
-  predicted: number;
+  sparkData: { v: number }[];
 }
 
 interface DepletionPoint {
@@ -115,33 +111,22 @@ const FALLBACK_FORECAST_DATA: ForecastPoint[] = [
   { day: "D10", actual: null, predicted: 533 },
 ];
 
-const DEPLETION_DATA: DepletionPoint[] = [
-  { status: "Critical", daysLeft: 5 },
-  { status: "Low Stock", daysLeft: 14 },
-  { status: "Healthy", daysLeft: 36 },
-  { status: "Overstock", daysLeft: 52 },
-];
-
-const STATUS_CONFIG: Record<StockStatus, { label: string; className: string; barColor: string }> = {
+const STATUS_CONFIG: Record<StockStatus, { label: string; className: string }> = {
   Critical: {
     label: "Critical",
-    className: "bg-rose-100 text-rose-700 border-rose-200",
-    barColor: "#f43f5e",
+    className: "bg-critical-soft text-critical border-critical/20",
   },
   "Low Stock": {
     label: "Low Stock",
-    className: "bg-amber-100 text-amber-700 border-amber-200",
-    barColor: "#f59e0b",
+    className: "bg-warning-soft text-warning border-warning/20",
   },
   Overstock: {
     label: "Overstock",
-    className: "bg-sky-100 text-sky-700 border-sky-200",
-    barColor: "#0ea5e9",
+    className: "bg-info-soft text-info border-info/20",
   },
   Healthy: {
     label: "Healthy",
-    className: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    barColor: "#10b981",
+    className: "bg-success-soft text-success border-success/20",
   },
 };
 
@@ -290,7 +275,7 @@ function renderCategoryProgress(item: CategoryBar) {
         <span className="text-slate-500">{item.name}</span>
         <span className="font-medium text-slate-700">{formattedValue}%</span>
       </div>
-      <div className="h-1.5 rounded-full bg-slate-100">
+      <div className="h-1.5 rounded-full bg-muted">
         <div className="h-1.5 rounded-full" style={item.style} />
       </div>
     </div>
@@ -382,6 +367,8 @@ function SummaryCardLink({
 
 function DashboardSnapshot({
   totalMedicines,
+  activeMedicineCount,
+  inventoryHealthPercent,
   lowStockCount,
   pendingDraftPoCount,
   restockUpdatedAt,
@@ -392,6 +379,8 @@ function DashboardSnapshot({
   onRestockMedicine,
 }: {
   totalMedicines: number;
+  activeMedicineCount: number;
+  inventoryHealthPercent: number;
   lowStockCount: number;
   pendingDraftPoCount: number | null;
   restockUpdatedAt: number | null;
@@ -406,39 +395,56 @@ function DashboardSnapshot({
   return (
     <div className="relative">
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-12">
-        <SummaryCardLink
-          to="/inventory"
-          search={{ focus: "all" }}
-          className="order-2 border-emerald-200 bg-emerald-50/55 md:order-2 lg:col-span-3"
-        >
-          <div className="flex h-full flex-col gap-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                  Medicines
+        <div className="order-2 md:order-2 lg:col-span-3">
+          <SummaryCardLink
+            to="/inventory"
+            search={{ focus: "all" }}
+            className="border-success/25 bg-success-soft/45"
+          >
+            <div className="flex h-full flex-col gap-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-success">
+                    Medicines
+                  </div>
+                </div>
+                <div className="rounded-full bg-success-soft px-2.5 py-0.5 text-[10px] font-semibold text-success">
+                  Healthy
                 </div>
               </div>
-              <div className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                Inventory
+
+              <div className="text-[2rem] font-semibold tabular-nums tracking-tight text-foreground lg:text-[2.15rem]">
+                {totalMedicines.toLocaleString()}
+              </div>
+
+              <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-success/20 pt-3 text-[11px] font-medium text-muted-foreground">
+                <span>
+                  <span className="font-semibold text-slate-800">
+                    {activeMedicineCount.toLocaleString()}
+                  </span>{" "}
+                  Active Items
+                </span>
+                <span>
+                  Inventory health{" "}
+                  <span className="font-semibold text-emerald-700">
+                    {inventoryHealthPercent.toFixed(0)}%
+                  </span>
+                </span>
               </div>
             </div>
-
-            <div className="text-[2rem] font-semibold tabular-nums tracking-tight text-foreground lg:text-[2.15rem]">
-              {totalMedicines.toLocaleString()}
-            </div>
-          </div>
-        </SummaryCardLink>
+          </SummaryCardLink>
+        </div>
 
         <button
           type="button"
           onClick={() => onTogglePanel(expandedPanel === "restock" ? null : "restock")}
-          className="order-1 rounded-2xl border border-amber-200 bg-amber-50/55 p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md md:order-1 lg:col-span-6"
+          className="order-1 rounded-2xl border border-warning/25 bg-warning-soft/45 p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 md:order-1 lg:col-span-6"
           aria-expanded={expandedPanel === "restock"}
         >
           <div className="flex h-full flex-col gap-3">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-warning">
                   Restock Alerts
                 </div>
               </div>
@@ -479,22 +485,25 @@ function DashboardSnapshot({
         <button
           type="button"
           onClick={() => onTogglePanel(expandedPanel === "draftPos" ? null : "draftPos")}
-          className="order-3 rounded-2xl border border-sky-200 bg-sky-50/55 p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md md:order-3 lg:col-span-3"
+          className="order-3 rounded-2xl border border-info/25 bg-info-soft/45 p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 md:order-3 lg:col-span-3"
           aria-expanded={expandedPanel === "draftPos"}
         >
           <div className="flex h-full flex-col gap-3">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-info">
                   Draft PO
                 </div>
               </div>
               <div className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[10px] font-semibold text-sky-700">
-                {pendingDraftPoCount === null ? "Unavailable" : "Pending Approval"}
+                {pendingDraftPoCount === null ? "Unavailable" : "Needs Approval"}
               </div>
             </div>
             <div className="text-[2rem] font-semibold tabular-nums tracking-tight text-foreground lg:text-[2.15rem]">
               {pendingDraftPoCount === null ? "N/A" : pendingDraftPoCount.toLocaleString()}
+            </div>
+            <div className="mt-auto border-t border-sky-100 pt-3 text-[11px] font-medium text-muted-foreground">
+              Awaiting Approval
             </div>
           </div>
         </button>
@@ -509,7 +518,7 @@ function DashboardSnapshot({
               <div className="p-3 sm:p-3.5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-warning">
                       Restock Alerts
                     </div>
                   </div>
@@ -528,7 +537,7 @@ function DashboardSnapshot({
                   {restockAlertMedicines.slice(0, 5).map((medicine) => (
                     <div
                       key={medicine.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50/35 px-3 py-2"
+                      className="flex items-center justify-between gap-3 rounded-xl border border-warning/15 bg-warning-soft/35 px-3 py-2"
                     >
                       <div className="min-w-0">
                         <div className="truncate text-[13px] font-medium text-foreground">
@@ -575,7 +584,7 @@ function DashboardSnapshot({
               <div className="p-3 sm:p-3.5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground">
                       Draft Purchase Orders
                     </div>
                   </div>
@@ -594,7 +603,7 @@ function DashboardSnapshot({
                   {draftPurchaseOrders.slice(0, 5).map((po) => (
                     <div
                       key={po.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/75 px-3 py-2"
+                      className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/75 px-3 py-2"
                     >
                       <div className="min-w-0">
                         <div className="truncate text-[13px] font-medium text-foreground">
@@ -654,6 +663,14 @@ function DashboardPage() {
   }, [medicines]);
 
   const totalMedicines = medicines.length;
+  const activeMedicineCount = medicines.filter((medicine) => medicine.current_stock > 0).length;
+  const inventoryHealthPercent =
+    totalMedicines === 0
+      ? 0
+      : (medicines.filter((medicine) => medicine.current_stock - medicine.safety_stock_level > 15)
+          .length /
+          totalMedicines) *
+        100;
   const supplierNameById = useMemo(
     () => new Map<number, string>(suppliers.map((supplier) => [supplier.id, supplier.name])),
     [suppliers],
@@ -700,21 +717,20 @@ function DashboardPage() {
     [medicines],
   );
   const lowStockCount = restockAlertMedicines.length;
-
-  const targetMedicineId = medicines[0]?.id ?? null;
-  const { data: predictions = [] } = usePredictions(targetMedicineId);
+  const { data: reportSummary, isError: reportError } = useReportSummary();
+  const forecastSource = reportError || !reportSummary ? "demo" : reportSummary.data_source;
 
   const forecastData = useMemo<ForecastPoint[]>(() => {
-    if (predictions.length === 0) {
+    if (!reportSummary?.ml_series.length) {
       return FALLBACK_FORECAST_DATA;
     }
 
-    return predictions.slice(0, 10).map((prediction, index) => ({
-      day: `D${index + 1}`,
-      actual: index < 7 ? prediction.predicted_demand : null,
-      predicted: prediction.predicted_demand,
+    return reportSummary.ml_series.map((point) => ({
+      day: point.name,
+      actual: point.actual_consumption,
+      predicted: point.predicted_demand,
     }));
-  }, [predictions]);
+  }, [reportSummary]);
 
   const categoryProgress = useMemo<CategoryBar[]>(() => {
     if (medicines.length === 0) {
@@ -944,6 +960,8 @@ function DashboardPage() {
       {modeSwitcher}
       <DashboardSnapshot
         totalMedicines={totalMedicines}
+        activeMedicineCount={activeMedicineCount}
+        inventoryHealthPercent={inventoryHealthPercent}
         lowStockCount={lowStockCount}
         pendingDraftPoCount={pendingReviewPurchaseOrders.length}
         restockUpdatedAt={restockUpdatedAt}
@@ -960,133 +978,145 @@ function DashboardPage() {
       />
 
       <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-        <Card className="interactive-card overflow-hidden border-border/70 bg-card/95 shadow-sm">
-          <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
-            <div>
-              <CardTitle className="text-base font-semibold text-slate-900">
-                Stock Consumption Forecast
-              </CardTitle>
-            </div>
-            <div className="rounded-full border border-border/70 bg-surface px-3 py-1 text-[11px] font-medium text-muted-foreground">
-              Updated live
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4 pt-1">
-            <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={forecastData}>
-                <defs>
-                  <linearGradient id="actualGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.18} />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis
-                  dataKey="day"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 11, fill: "#94a3b8" }}
-                />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#ffffff",
-                    borderRadius: "8px",
-                    border: "1px solid #e2e8f0",
-                    color: "#0f172a",
-                    zIndex: 50,
-                  }}
-                  itemStyle={{ color: "#0f172a" }}
-                />
-                <Area
-                  dataKey="actual"
-                  name="Actual stock"
-                  stroke="#10b981"
-                  strokeWidth={2}
-                  fill="url(#actualGrad)"
-                  dot={false}
-                  connectNulls={false}
-                  type="monotone"
-                />
-                <Line
-                  dataKey="predicted"
-                  name="Demand forecast"
-                  stroke="#38bdf8"
-                  strokeWidth={1.5}
-                  strokeDasharray="5 3"
-                  dot={false}
-                  connectNulls
-                  type="monotone"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+        <div>
+          <Card className="interactive-card overflow-hidden border-border/70 bg-card/95 shadow-sm">
+            <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
+              <div>
+                <CardTitle className="text-base font-semibold text-slate-900">
+                  Stock Consumption Forecast
+                </CardTitle>
+              </div>
+              <div className="rounded-full border border-border/70 bg-surface px-3 py-1 text-[11px] font-semibold text-muted-foreground">
+                {forecastSource === "ml"
+                  ? "ML live"
+                  : forecastSource === "fallback"
+                    ? "Fallback live"
+                    : "Demo data"}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-1">
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={forecastData}>
+                  <defs>
+                    <linearGradient id="actualGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#10b981" stopOpacity={0.18} />
+                      <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis
+                    dataKey="day"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11, fill: "#94a3b8" }}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11, fill: "#94a3b8" }}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#ffffff",
+                      borderRadius: "8px",
+                      border: "1px solid #e2e8f0",
+                      color: "#0f172a",
+                      zIndex: 50,
+                    }}
+                    itemStyle={{ color: "#0f172a" }}
+                  />
+                  <Area
+                    dataKey="actual"
+                    name="Actual stock"
+                    stroke="#10b981"
+                    strokeWidth={2}
+                    fill="url(#actualGrad)"
+                    dot={false}
+                    connectNulls={false}
+                    type="monotone"
+                  />
+                  <Line
+                    dataKey="predicted"
+                    name="Demand forecast"
+                    stroke="#38bdf8"
+                    strokeWidth={1.5}
+                    strokeDasharray="5 3"
+                    dot={false}
+                    connectNulls
+                    type="monotone"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
 
-            <div className="space-y-2">
-              <div className="flex items-end justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-900">Category stock share</h3>
+              <div className="space-y-2">
+                <div className="flex items-end justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Category stock share</h3>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {categoryProgress.map((item) => (
+                    <div
+                      key={item.name}
+                      className="rounded-2xl border border-border/60 bg-background/70 p-3"
+                    >
+                      {renderCategoryProgress(item)}
+                    </div>
+                  ))}
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                {categoryProgress.map((item) => (
-                  <div
-                    key={item.name}
-                    className="rounded-2xl border border-border/60 bg-background/70 p-3"
-                  >
-                    {renderCategoryProgress(item)}
-                  </div>
-                ))}
+        <div>
+          <Card
+            className="interactive-card flex flex-col overflow-hidden border-border/70 bg-card/95 shadow-sm"
+            id="restocking-worklist"
+          >
+            <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
+              <div>
+                <CardTitle className="text-base font-semibold text-foreground">
+                  Restocking priorities
+                </CardTitle>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card
-          className="interactive-card flex flex-col overflow-hidden border-border/70 bg-card/95 shadow-sm"
-          id="restocking-worklist"
-        >
-          <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
-            <div>
-              <CardTitle className="text-base font-semibold text-slate-900">
-                Restocking priorities
-              </CardTitle>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExportInsights}
-              className="gap-1.5 rounded-full border-border/80 bg-white/70 hover:bg-white"
-            >
-              <Download className="h-3.5 w-3.5" />
-            </Button>
-          </CardHeader>
-          <CardContent className="max-h-[22rem] overflow-auto pt-1 pr-1">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-border/60 hover:bg-transparent">
-                  <TableHead className="border-r border-border/60 pl-6 font-semibold text-slate-500">
-                    Medicine
-                  </TableHead>
-                  <TableHead className="border-r border-border/60 text-right font-semibold text-slate-500">
-                    Stock
-                  </TableHead>
-                  <TableHead className="border-r border-border/60 text-right font-semibold text-slate-500">
-                    Safety Stock
-                  </TableHead>
-                  <TableHead className="border-r border-border/60 text-right font-semibold text-slate-500">
-                    Difference
-                  </TableHead>
-                  <TableHead className="border-r border-border/60 font-semibold text-slate-500">
-                    Status
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-500">Supplier</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>{worklistRows.map(renderRestockPriorityRow)}</TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportInsights}
+                className="gap-1.5 rounded-full border-border/80 bg-white/70 hover:bg-white"
+              >
+                <Download className="h-3.5 w-3.5" />
+              </Button>
+            </CardHeader>
+            <CardContent className="max-h-[22rem] overflow-auto pt-1 pr-1">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-border/60 hover:bg-transparent">
+                    <TableHead className="border-r border-border/60 pl-6 font-semibold text-slate-500">
+                      Medicine
+                    </TableHead>
+                    <TableHead className="border-r border-border/60 text-right font-semibold text-slate-500">
+                      Stock
+                    </TableHead>
+                    <TableHead className="border-r border-border/60 text-right font-semibold text-slate-500">
+                      Safety Stock
+                    </TableHead>
+                    <TableHead className="border-r border-border/60 text-right font-semibold text-slate-500">
+                      Difference
+                    </TableHead>
+                    <TableHead className="border-r border-border/60 font-semibold text-slate-500">
+                      Status
+                    </TableHead>
+                    <TableHead className="font-semibold text-slate-500">Supplier</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>{worklistRows.map(renderRestockPriorityRow)}</TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <Dialog open={restockDialogOpen} onOpenChange={handleRestockDialogOpenChange}>

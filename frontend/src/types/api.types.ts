@@ -1,5 +1,6 @@
 export type TransactionType = "INCOMING" | "OUTGOING";
 export type POStatus = "DRAFT_AI" | "APPROVED" | "REJECTED" | "SENT_TO_VENDOR" | "COMPLETED";
+export type PredictionDataSource = "ml" | "fallback" | "demo";
 
 export interface Supplier {
   id: number;
@@ -58,6 +59,53 @@ export interface PredictionResponse {
   predicted_demand: number;
   confidence_score: number;
   calculated_at: string;
+}
+
+export interface ReportCategoryPoint {
+  name: string;
+  fast_moving: number;
+  slow_moving: number;
+}
+
+export interface ReportSeriesPoint {
+  name: string;
+  actual_consumption: number;
+  predicted_demand: number;
+  source: PredictionDataSource;
+}
+
+export interface ReportSummaryResponse {
+  data_source: PredictionDataSource;
+  target_medicine_id: number | null;
+  target_medicine_name: string | null;
+  forecast_accuracy: number;
+  inventory_value: number;
+  risk_value: number;
+  turnover_ratio: number;
+  overview: ReportCategoryPoint[];
+  ml_series: ReportSeriesPoint[];
+  updated_at: string;
+}
+
+export interface TrainAllModelsResponse {
+  status: string;
+  medicine_count: number;
+}
+
+export interface TrainMedicineResponse {
+  medicine_id: number;
+  status: string;
+  message: string;
+}
+
+export interface ModelStatusEntry {
+  medicine_id: number;
+  is_loaded: boolean;
+  medicine_name: string;
+}
+
+export interface ModelStatusResponse {
+  models: ModelStatusEntry[];
 }
 
 export interface POItem {

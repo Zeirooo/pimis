@@ -12,6 +12,9 @@ import type {
   PredictionResponse,
   ManualPurchaseOrderCreate,
   RestockingEvalResponse,
+  ReportSummaryResponse,
+  TrainAllModelsResponse,
+  ModelStatusResponse,
 } from "@/types/api.types";
 
 export const queryKeys = {
@@ -20,6 +23,8 @@ export const queryKeys = {
   transactions: ["transactions"] as const,
   predictions: (medicineId: number) => ["predictions", medicineId] as const,
   purchaseOrders: ["purchase-orders"] as const,
+  reports: ["reports", "summary"] as const,
+  modelStatus: ["predictions", "model-status"] as const,
 };
 
 export function useMedicines() {
@@ -172,5 +177,35 @@ export function useEvaluateRestocking() {
       queryClient.invalidateQueries({ queryKey: queryKeys.purchaseOrders });
       queryClient.invalidateQueries({ queryKey: queryKeys.medicines });
     },
+  });
+}
+
+export function useReportSummary() {
+  return useQuery({
+    queryKey: queryKeys.reports,
+    queryFn: () => apiFetch<ReportSummaryResponse>("/api/predictions/report"),
+    staleTime: 30_000,
+  });
+}
+
+export function useTrainAllModels() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<TrainAllModelsResponse>("/api/predictions/train/all", {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.reports });
+      queryClient.invalidateQueries({ queryKey: queryKeys.modelStatus });
+    },
+  });
+}
+
+export function useModelStatus() {
+  return useQuery({
+    queryKey: queryKeys.modelStatus,
+    queryFn: () => apiFetch<ModelStatusResponse>("/api/predictions/models/status"),
+    staleTime: 30_000,
   });
 }
