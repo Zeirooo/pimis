@@ -7,6 +7,11 @@ export interface Supplier {
   contact_person: string | null;
   email: string | null;
   phone: string | null;
+  status: "Active" | "Inactive";
+}
+
+export interface SupplierUpdate {
+  status?: "Active" | "Inactive";
 }
 
 export interface Medicine {

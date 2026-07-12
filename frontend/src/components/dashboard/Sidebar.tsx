@@ -1,34 +1,15 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { motion } from "framer-motion";
-import {
-  LayoutDashboard,
-  Package,
-  ShoppingCart,
-  Truck,
-  BarChart3,
-  Settings,
-  Pill,
-  X,
-} from "lucide-react";
+import { LayoutDashboard, Package, ShoppingCart, Truck, Settings, Pill, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { EASE_OUT } from "@/lib/motion";
 
 const nav = [
   { label: "Dashboard", to: "/", icon: LayoutDashboard },
   { label: "Inventory", to: "/inventory", icon: Package },
   { label: "Purchase Orders", to: "/purchase-orders", icon: ShoppingCart },
   { label: "Suppliers", to: "/suppliers", icon: Truck },
-  { label: "Reports", to: "/reports", icon: BarChart3 },
   { label: "Settings", to: "/settings", icon: Settings },
 ];
-
-// Hoisted so framer-motion always sees the same object identity across
-// renders instead of a fresh literal per nav item per render.
-const ACTIVE_PILL_TRANSITION = { duration: 0.28, ease: EASE_OUT };
-const NAV_LABEL_TRANSITION = { duration: 0.15, ease: EASE_OUT };
-const NAV_HOVER_SHIFT = { x: 3 };
-const NAV_HOVER_STATIC = { x: 0 };
 
 type SidebarProps = {
   isOpen: boolean;
@@ -94,34 +75,18 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               <Link
                 key={item.label}
                 to={item.to}
-                className={cn(
-                  "group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-colors duration-150",
-                  !isActive && "hover:bg-white/6",
-                )}
+                className={[
+                  "group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all",
+                  isActive
+                    ? "bg-sidebar-active text-sidebar-active-foreground shadow-md shadow-black/10"
+                    : "text-sidebar-foreground/80 hover:bg-white/6 hover:text-sidebar-foreground",
+                ].join(" ")}
               >
-                {isActive ? (
-                  <motion.span
-                    layoutId="sidebar-active-pill"
-                    className="absolute inset-0 rounded-2xl bg-sidebar-active shadow-md shadow-black/10"
-                    transition={ACTIVE_PILL_TRANSITION}
-                  />
-                ) : null}
                 {isActive && (
-                  <span className="absolute left-0 top-1.5 bottom-1.5 z-10 w-1 rounded-r-full bg-gold" />
+                  <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r-full bg-gold" />
                 )}
-                <motion.span
-                  whileHover={isActive ? NAV_HOVER_STATIC : NAV_HOVER_SHIFT}
-                  transition={NAV_LABEL_TRANSITION}
-                  className={cn(
-                    "relative z-10 flex items-center gap-3",
-                    isActive
-                      ? "text-sidebar-active-foreground"
-                      : "text-sidebar-foreground/80 group-hover:text-sidebar-foreground",
-                  )}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span>{item.label}</span>
-                </motion.span>
+                <Icon className="h-4 w-4 shrink-0" />
+                <span>{item.label}</span>
               </Link>
             );
           })}

@@ -10,7 +10,7 @@ import os
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.database import Base, SessionLocal, engine, get_db
@@ -33,7 +33,7 @@ from backend.routers.predictions import router as predictions_router
 from backend.routers.restocking import router as restocking_router
 from backend.routers.transactions import router as transactions_router
 from backend.schemas.schemas import MedicineCreate, MedicineResponse, MedicineUpdate
-from backend.schemas.schemas import SupplierResponse
+from backend.schemas.schemas import SupplierResponse, SupplierUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        has_status_column = await conn.run_sync(
+            lambda sync_conn: any(
+                column["name"] == "status"
+                for column in inspect(sync_conn).get_columns("suppliers")
+            ),
+        )
+        if not has_status_column:
+            await conn.execute(
+                text("ALTER TABLE suppliers ADD COLUMN status VARCHAR(50) NOT NULL DEFAULT 'Active'"),
+            )
 
     async with SessionLocal() as db:
         await _seed_demo_data(db)
@@ -123,17 +133,54 @@ async def _seed_demo_data(db: AsyncSession) -> dict[str, str]:
     """Seed a minimal dataset for local transaction API testing."""
 
     demo_suppliers = [
-        Supplier(name="PT Kimia Farma", contact_person="Budi Santoso", phone="+628123456789"),
-        Supplier(name="PT Sanbe Farma", contact_person="Rina Wijaya", phone="+628112223334"),
-        Supplier(name="PT Kalbe Farma", contact_person="Andre Kusuma", phone="+628133445566"),
-        Supplier(name="PT Dexa Medica", contact_person="Melati Anggraini", phone="+628155667788"),
+        Supplier(
+            name="PT Kimia Farma",
+            contact_person="Budi Santoso",
+            email="b2b.orders@kimiafarma.co.id",
+            phone="+628123456789",
+            status="Active",
+        ),
+        Supplier(
+            name="PT Sanbe Farma",
+            contact_person="Rina Wijaya",
+            email="hospital.channel@sanbe.co.id",
+            phone="+628112223334",
+            status="Active",
+        ),
+        Supplier(
+            name="PT Kalbe Farma",
+            contact_person="Andre Kusuma",
+            email="institutional.sales@kalbe.co.id",
+            phone="+628133445566",
+            status="Active",
+        ),
+        Supplier(
+            name="PT Dexa Medica",
+            contact_person="Melati Anggraini",
+            email="pharma.logistics@dexa-medica.com",
+            phone="+628155667788",
+            status="Active",
+        ),
+        Supplier(
+            name="PT Pharos Indonesia",
+            contact_person="Hendra Gunawan",
+            email="procurement@pharos.co.id",
+            phone="+6282112345678",
+            status="Inactive",
+        ),
     ]
 
-    existing_supplier_result = await db.execute(select(Supplier.name))
-    existing_supplier_names = set(existing_supplier_result.scalars().all())
     for supplier in demo_suppliers:
-        if supplier.name not in existing_supplier_names:
+        existing_supplier_result = await db.execute(select(Supplier).where(Supplier.name == supplier.name))
+        existing_supplier = existing_supplier_result.scalar_one_or_none()
+        if existing_supplier is None:
             db.add(supplier)
+        else:
+            existing_supplier.contact_person = supplier.contact_person
+            existing_supplier.email = supplier.email
+            existing_supplier.phone = supplier.phone
+            if not existing_supplier.status:
+                existing_supplier.status = supplier.status
 
     await db.flush()
 
@@ -265,6 +312,29 @@ async def get_suppliers(db: AsyncSession = Depends(get_db)) -> list[Supplier]:
     return result.scalars().all()
 
 
+@app.patch("/api/suppliers/{supplier_id}", response_model=SupplierResponse)
+async def update_supplier(
+    supplier_id: int,
+    supplier_in: SupplierUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> Supplier:
+    """Update supplier fields managed from the supplier directory."""
+
+    supplier = await db.get(Supplier, supplier_id)
+    if supplier is None:
+        raise HTTPException(status_code=404, detail="Supplier not found.")
+
+    updates = supplier_in.model_dump(exclude_unset=True)
+    if "status" in updates and updates["status"] is not None:
+        if updates["status"] not in {"Active", "Inactive"}:
+            raise HTTPException(status_code=422, detail="Supplier status must be Active or Inactive.")
+        supplier.status = updates["status"]
+
+    await db.commit()
+    await db.refresh(supplier)
+    return supplier
+
+
 @app.post("/api/medicines", response_model=MedicineResponse, status_code=status.HTTP_201_CREATED)
 async def create_medicine(
     medicine_in: MedicineCreate,
@@ -332,4 +402,3 @@ async def delete_medicine(
 app.include_router(transactions_router)
 app.include_router(predictions_router)
 app.include_router(restocking_router)
-

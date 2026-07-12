@@ -5,6 +5,7 @@ import type {
   MedicineCreate,
   MedicineUpdate,
   Supplier,
+  SupplierUpdate,
   TransactionResponse,
   TransactionCreate,
   PurchaseOrderResponse,
@@ -59,6 +60,20 @@ export function useSuppliers() {
     staleTime: 30_000,
     select: (data) => data ?? [],
     placeholderData: [],
+  });
+}
+
+export function useUpdateSupplier() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: SupplierUpdate }) =>
+      apiFetch<Supplier>(`/api/suppliers/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.suppliers });
+    },
   });
 }
 

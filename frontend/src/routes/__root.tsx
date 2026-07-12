@@ -110,10 +110,6 @@ function RootComponent() {
 function AuthGate() {
   const { user, isBootstrapping } = useAuth();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const search = useRouterState({
-    select: (state) => (state.location.search as { redirect?: string } | undefined) ?? {},
-  });
-  const redirectPath = search.redirect;
 
   if (isBootstrapping) {
     return <LoadingScreen title="Preparing PIMIS" description="Loading pharmacy workspace" />;
@@ -128,7 +124,7 @@ function AuthGate() {
   }
 
   if (pathname === "/login") {
-    return <Navigate to={redirectPath ?? "/"} replace />;
+    return <Navigate to="/" replace />;
   }
 
   return <Layout />;
@@ -151,13 +147,13 @@ function LoginScreen() {
     writeProfileSettings({
       ...DEFAULT_PROFILE_SETTINGS,
       fullName: "Dr. Andi Wijaya",
-      role: "Manager Instalasi",
-      email: "andi.wijaya@rs-sejahtera.go.id",
+      role: "Pharmacy Manager",
+      email: "andi.wijaya@pharmacy.go.id",
       phone: "+62 812 3456 7890",
     });
 
     toast.success("Welcome back", {
-      description: "Manager workspace is ready.",
+      description: "Pharmacy manager workspace is ready.",
     });
   }
 
@@ -165,110 +161,71 @@ function LoginScreen() {
     <div className="login-shell relative min-h-screen overflow-hidden px-4 py-8 sm:px-8">
       <div className="login-bg-orb login-bg-orb--a" />
       <div className="login-bg-orb login-bg-orb--b" />
-      <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-6xl items-center justify-center">
-        <Card className="login-panel grid w-full overflow-hidden border border-border/60 bg-surface/95 shadow-[0_28px_90px_oklch(0.19_0.018_235/16%)] backdrop-blur-sm lg:grid-cols-[1fr_1.35fr]">
-          <section className="login-enter border-b border-border/70 p-8 sm:p-12 lg:border-b-0 lg:border-r">
-            <div className="mb-12 flex items-center justify-between">
-              <div className="text-xl font-semibold tracking-tight text-foreground">
-                PIMIS
-              </div>
-              <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-                ID
-              </span>
+      <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[30rem] items-center justify-center">
+        <Card className="login-panel w-full overflow-hidden border border-border/60 bg-surface/96 px-6 py-8 shadow-[0_28px_90px_oklch(0.19_0.018_235/16%)] backdrop-blur-sm sm:px-8 sm:py-10">
+          <div className="mx-auto mb-6 flex w-full max-w-[260px] justify-center">
+            <div className="flex h-18 w-18 items-center justify-center rounded-full border-2 border-dashed border-primary/50 bg-primary/5 text-sm font-semibold tracking-[0.22em] text-primary">
+              PIMIS
             </div>
+          </div>
 
-            <div className="space-y-2 text-center lg:text-left">
-              <h1 className="text-4xl font-semibold tracking-tight text-foreground">Welcome</h1>
-              <p className="max-w-md text-sm text-muted-foreground">
-                Sign in with your manager account to access inventory control and purchase order
-                review.
-              </p>
-            </div>
+          <div className="space-y-2 text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground">
+              Pharmacy Inventory Management Information System
+            </p>
+          </div>
 
-            <form className="mt-10 space-y-4" onSubmit={handleSubmit}>
-              <Input
-                type="text"
-                autoComplete="username"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder="Username"
-                className="h-11 rounded-xl border-border/70 bg-muted/40"
-                disabled={isSigningIn}
-              />
-              <Input
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Password"
-                className="h-11 rounded-xl border-border/70 bg-muted/40"
-                disabled={isSigningIn}
-              />
-
-              <div className="pt-2">
-                <Button
-                  type="submit"
-                  className="h-11 w-full rounded-xl bg-primary text-primary-foreground shadow-[0_10px_30px_oklch(0.44_0.12_165/30%)] hover:bg-primary/90"
-                  disabled={isSigningIn}
-                >
-                  {isSigningIn ? (
-                    <span className="inline-flex items-center gap-2">
-                      <span className="buffering-ring h-4 w-4 border-primary-foreground/40 border-t-primary-foreground" />
-                      Signing in...
-                    </span>
-                  ) : (
-                    "Sign in"
-                  )}
-                </Button>
-              </div>
-            </form>
-
-            <div className="mt-10 space-y-1 text-center text-xs text-muted-foreground lg:text-left">
-              <p>
-                Account management is handled by administrators. Registration is disabled in this
-                demo.
-              </p>
-              <p>
-                Need help? Contact{" "}
-                <span className="font-medium text-primary">it@rs-sejahtera.go.id</span>
-              </p>
-            </div>
-          </section>
-
-          <section
-            className="relative hidden min-h-[540px] overflow-hidden bg-[linear-gradient(180deg,oklch(0.95_0.03_170),oklch(0.9_0.03_190))] lg:block"
-            style={{
-              backgroundImage: `linear-gradient(180deg, rgba(236, 253, 245, 0.28), rgba(236, 253, 245, 0.12)), url('/7c57e1fcccd1_RS%20JIH%20Yogyakarta%20Gedung.jpg.avif')`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-            }}
+          <form
+            className="login-enter mx-auto mt-8 w-full max-w-sm space-y-3.5"
+            onSubmit={handleSubmit}
           >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,oklch(0.58_0.13_165/18%),transparent_40%),radial-gradient(circle_at_20%_80%,oklch(0.62_0.09_80/18%),transparent_44%)]" />
-            <div className="absolute inset-0 bg-white/22 backdrop-blur-[1px]" />
-            <div className="relative flex h-full items-center justify-center p-10">
-              <div className="login-card-glass w-full max-w-md rounded-3xl border border-white/45 bg-white/42 p-8 text-foreground shadow-[0_22px_56px_rgba(15,23,42,0.2)] backdrop-blur-xl">
-                <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
-                  <span className="buffering-ring h-5 w-5 border-foreground/25 border-t-foreground" />
-                  Real-time operations
-                </div>
-                <h2 className="text-3xl font-semibold leading-tight text-foreground">
-                  Manager dashboard for medicine stock and restocking decisions.
-                </h2>
-                <p className="mt-4 text-sm text-muted-foreground">
-                  Monitor inventory health, approve AI draft purchase orders, and keep pharmacy
-                  supplies aligned with demand.
-                </p>
-              </div>
+            <Input
+              type="text"
+              autoComplete="username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="Username"
+              className="h-12 rounded-2xl border-border/70 bg-muted/40 px-4"
+              disabled={isSigningIn}
+            />
+            <Input
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Password"
+              className="h-12 rounded-2xl border-border/70 bg-muted/40 px-4"
+              disabled={isSigningIn}
+            />
+
+            <div className="flex justify-center pt-1">
+              <Button
+                type="submit"
+                className="h-11 w-full max-w-52 rounded-2xl bg-primary text-primary-foreground shadow-[0_10px_30px_oklch(0.44_0.12_165/30%)] transition-transform duration-200 hover:bg-primary/90 hover:-translate-y-0.5"
+                disabled={isSigningIn}
+              >
+                {isSigningIn ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="buffering-ring h-4 w-4 border-primary-foreground/40 border-t-primary-foreground" />
+                    Signing in...
+                  </span>
+                ) : (
+                  "Sign in"
+                )}
+              </Button>
             </div>
-          </section>
+          </form>
+
+          <div className="mt-6 text-center text-xs text-muted-foreground">
+            Need help? Contact <span className="font-medium text-primary">it@pimis.go.id</span>
+          </div>
         </Card>
       </div>
       {isSigningIn ? (
         <div className="pointer-events-none absolute inset-0 z-40 grid place-items-center bg-background/40 backdrop-blur-[2px]">
           <div className="inline-flex items-center gap-3 rounded-full border border-border bg-surface/95 px-5 py-3 text-sm font-medium text-foreground shadow-lg">
             <span className="buffering-ring h-5 w-5 border-primary/35 border-t-primary" />
-            Loading manager workspace
+            Loading...
           </div>
         </div>
       ) : null}

@@ -55,6 +55,7 @@ class Supplier(Base):
     contact_person: Mapped[str | None] = mapped_column(String(length=255), nullable=True)
     email: Mapped[str | None] = mapped_column(String(length=255), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(length=50), nullable=True)
+    status: Mapped[str] = mapped_column(String(length=50), default="Active", nullable=False)
 
     medicines: Mapped[list["Medicine"]] = relationship(back_populates="supplier")
     purchase_orders: Mapped[list["PurchaseOrder"]] = relationship(back_populates="supplier")

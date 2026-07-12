@@ -64,6 +64,8 @@ type MedicineRow = {
 };
 
 type InventoryFocus = "all" | "alerts";
+type MedicineSort = "default" | "az" | "za";
+type StockStatus = "Healthy" | "Warning" | "Critical";
 
 const CATEGORY_OPTIONS = [
   "Analgesic / Antipyretic",
@@ -81,6 +83,14 @@ const UNIT_OPTIONS = [
   "Pre-filled pens",
 ] as const;
 
+function getStockStatus(currentStock: number, safetyStock: number): StockStatus {
+  const stockGap = currentStock - safetyStock;
+
+  if (stockGap < 0) return "Critical";
+  if (stockGap <= 15) return "Warning";
+  return "Healthy";
+}
+
 function StockStatusBadge({
   currentStock,
   safetyStock,
@@ -88,22 +98,36 @@ function StockStatusBadge({
   currentStock: number;
   safetyStock: number;
 }) {
-  const healthy = currentStock > safetyStock;
-  if (healthy) {
+  const status = getStockStatus(currentStock, safetyStock);
+
+  if (status === "Critical") {
     return (
-      <Badge
-        className="rounded-md font-medium border border-success/20 bg-success-soft text-success shadow-none hover:bg-success-soft"
-        variant="outline"
-      >
-        <span className="relative mr-1.5 inline-flex h-1.5 w-1.5 rounded-full bg-current" />
-        Healthy
+      <Badge variant="destructive" className="rounded-md font-medium shadow-none">
+        <span className="relative mr-1.5 inline-flex h-1.5 w-1.5 rounded-full bg-destructive-foreground/80" />
+        Critical
       </Badge>
     );
   }
+
+  if (status === "Warning") {
+    return (
+      <Badge
+        className="rounded-md border border-amber-200 bg-amber-50 text-amber-700 shadow-none hover:bg-amber-50 font-medium"
+        variant="outline"
+      >
+        <span className="relative mr-1.5 inline-flex h-1.5 w-1.5 rounded-full bg-current" />
+        Warning
+      </Badge>
+    );
+  }
+
   return (
-    <Badge variant="destructive" className="rounded-md font-medium shadow-none">
-      <span className="relative mr-1.5 inline-flex h-1.5 w-1.5 rounded-full bg-destructive-foreground/80" />
-      Low Stock
+    <Badge
+      className="rounded-md font-medium border border-success/20 bg-success-soft text-success shadow-none hover:bg-success-soft"
+      variant="outline"
+    >
+      <span className="relative mr-1.5 inline-flex h-1.5 w-1.5 rounded-full bg-current" />
+      Healthy
     </Badge>
   );
 }
@@ -116,6 +140,9 @@ export function InventoryPage() {
   const [restockEvaluation, setRestockEvaluation] = useState<RestockingEvalResponse | null>(null);
   const [restockMedicineId, setRestockMedicineId] = useState<number | null>(null);
   const [restockSupplierId, setRestockSupplierId] = useState<string>("");
+  const [medicineSort, setMedicineSort] = useState<MedicineSort>("default");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<StockStatus | "all">("all");
   const dashboardSearch = useRouterState({
     select: (state) => (state.location.search as { focus?: string } | undefined) ?? {},
   });
@@ -147,26 +174,43 @@ export function InventoryPage() {
     [medicines],
   );
 
+  const categoryFilterOptions = useMemo(
+    () =>
+      Array.from(new Set(medicineRows.map((medicine) => medicine.category)))
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)),
+    [medicineRows],
+  );
+
   const dashboardFocus: InventoryFocus = dashboardSearch.focus === "alerts" ? "alerts" : "all";
 
   const filteredMedicines = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
 
-    return medicineRows.filter((m) => {
+    const filtered = medicineRows.filter((m) => {
       const matchesQuery =
         !q || m.sku.toLowerCase().includes(q) || m.name.toLowerCase().includes(q);
       const matchesFocus = dashboardFocus === "all" ? true : m.currentStock <= m.safetyStock;
+      const matchesCategory = categoryFilter === "all" || m.category === categoryFilter;
+      const matchesStatus =
+        statusFilter === "all" || getStockStatus(m.currentStock, m.safetyStock) === statusFilter;
 
-      return matchesQuery && matchesFocus;
+      return matchesQuery && matchesFocus && matchesCategory && matchesStatus;
     });
-  }, [dashboardFocus, medicineRows, searchQuery]);
+
+    if (medicineSort === "default") return filtered;
+
+    return [...filtered].sort((a, b) =>
+      medicineSort === "az" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name),
+    );
+  }, [categoryFilter, dashboardFocus, medicineRows, medicineSort, searchQuery, statusFilter]);
 
   const dashboardFocusLabel =
     dashboardFocus === "alerts" ? "Showing medicines that need restock review." : null;
 
   const form = useForm<MedicineFormData>({
     resolver: zodResolver(medicineSchema),
-    defaultValues: { name: "", sku: "", category: "", unit: "", safetyStock: 0 },
+    defaultValues: { name: "", sku: "", category: "", unit: "", currentStock: 0, safetyStock: 0 },
   });
 
   function openAddDialog() {
@@ -181,6 +225,7 @@ export function InventoryPage() {
       sku: row.sku,
       category: row.category,
       unit: row.unit,
+      currentStock: row.currentStock,
       safetyStock: row.safetyStock,
     });
     setEditingSku(row.sku);
@@ -211,6 +256,7 @@ export function InventoryPage() {
       name: data.name,
       category: data.category,
       unit_measurement: data.unit,
+      current_stock: data.currentStock,
       safety_stock_level: data.safetyStock,
       supplier_id: existing?.supplierId ?? fallbackSupplierId,
     };
@@ -260,13 +306,15 @@ export function InventoryPage() {
         onSuccess: (result) => {
           setRestockEvaluation(result);
           setRestockDialogOpen(true);
-          if (result.status === "Low Stock") {
+          if (row.currentStock < row.safetyStock) {
             toast.info(
               `${result.medicine_name} is low stock. Choose a supplier to create the draft PO.`,
             );
             return;
           }
-          toast.info(`${result.medicine_name} is still above the restock threshold.`);
+          toast.info(
+            `${result.medicine_name} is in the warning range. You can still create a draft PO.`,
+          );
         },
         onError: (err) => handleApiError("Evaluate restocking", err),
       },
@@ -339,17 +387,51 @@ export function InventoryPage() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table>
+            <Table className="min-w-[1400px] table-fixed">
+              <colgroup>
+                <col className="w-[150px]" />
+                <col className="w-[210px]" />
+                <col className="w-[200px]" />
+                <col className="w-[240px]" />
+                <col className="w-[130px]" />
+                <col className="w-[130px]" />
+                <col className="w-[140px]" />
+                <col className="w-[280px]" />
+              </colgroup>
               <TableHeader>
                 <TableRow className="border-border hover:bg-transparent">
                   <TableHead className="pl-6 font-semibold text-foreground whitespace-nowrap">
                     SKU
                   </TableHead>
                   <TableHead className="font-semibold text-foreground whitespace-nowrap">
-                    Medicine Name
+                    <Select
+                      value={medicineSort}
+                      onValueChange={(value) => setMedicineSort(value as MedicineSort)}
+                    >
+                      <SelectTrigger className="h-8 w-full border-0 bg-transparent px-0 font-semibold text-foreground shadow-none hover:bg-transparent focus:ring-0">
+                        <SelectValue placeholder="Medicine Name" />
+                      </SelectTrigger>
+                      <SelectContent className="z-[70]">
+                        <SelectItem value="default">Medicine Name</SelectItem>
+                        <SelectItem value="az">Medicine A-Z</SelectItem>
+                        <SelectItem value="za">Medicine Z-A</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </TableHead>
                   <TableHead className="font-semibold text-foreground whitespace-nowrap">
-                    Category
+                    <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                      <SelectTrigger className="h-8 w-full border-0 bg-transparent px-0 font-semibold text-foreground shadow-none hover:bg-transparent focus:ring-0">
+                        <SelectValue placeholder="Category" />
+                      </SelectTrigger>
+                      <SelectContent className="z-[70]">
+                        <SelectItem value="all">All categories</SelectItem>
+                        {categoryFilterOptions.map((category) => (
+                          <SelectItem key={category} value={category}>
+                            {category}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </TableHead>
                   <TableHead className="font-semibold text-foreground whitespace-nowrap">
                     Unit
@@ -361,7 +443,20 @@ export function InventoryPage() {
                     Safety Stock
                   </TableHead>
                   <TableHead className="font-semibold text-foreground whitespace-nowrap">
-                    Status
+                    <Select
+                      value={statusFilter}
+                      onValueChange={(value) => setStatusFilter(value as StockStatus | "all")}
+                    >
+                      <SelectTrigger className="h-8 w-full border-0 bg-transparent px-0 font-semibold text-foreground shadow-none hover:bg-transparent focus:ring-0">
+                        <SelectValue placeholder="Status" />
+                      </SelectTrigger>
+                      <SelectContent className="z-[70]">
+                        <SelectItem value="all">All status</SelectItem>
+                        <SelectItem value="Healthy">Healthy</SelectItem>
+                        <SelectItem value="Warning">Warning</SelectItem>
+                        <SelectItem value="Critical">Critical</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </TableHead>
                   <TableHead className="pr-6 text-right font-semibold text-foreground whitespace-nowrap">
                     Actions
@@ -397,13 +492,20 @@ export function InventoryPage() {
                 ) : (
                   filteredMedicines.map((row) => (
                     <TableRow key={row.sku} className="border-border">
-                      <TableCell className="pl-6 font-mono text-xs text-muted-foreground">
+                      <TableCell
+                        className="pl-6 font-mono text-xs text-muted-foreground"
+                        title={row.sku}
+                      >
                         {row.sku}
                       </TableCell>
-                      <TableCell className="font-medium text-foreground">{row.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{row.category}</TableCell>
+                      <TableCell className="truncate font-medium text-foreground" title={row.name}>
+                        {row.name}
+                      </TableCell>
+                      <TableCell className="truncate text-muted-foreground" title={row.category}>
+                        {row.category}
+                      </TableCell>
                       <TableCell
-                        className="max-w-[200px] truncate text-muted-foreground"
+                        className="truncate text-muted-foreground"
                         title={row.unit}
                       >
                         {row.unit}
@@ -414,20 +516,20 @@ export function InventoryPage() {
                       <TableCell className="text-right tabular-nums text-muted-foreground">
                         {row.safetyStock.toLocaleString()}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap">
                         <StockStatusBadge
                           currentStock={row.currentStock}
                           safetyStock={row.safetyStock}
                         />
                       </TableCell>
                       <TableCell className="pr-6 text-right">
-                        <div className="inline-flex items-center justify-end gap-1">
-                          {row.currentStock <= row.safetyStock ? (
+                        <div className="grid grid-cols-[116px_32px_32px] items-center justify-end gap-2">
+                          {row.currentStock <= row.safetyStock + 15 ? (
                             <Button
                               type="button"
                               variant="secondary"
                               size="sm"
-                              className="h-8 gap-1.5"
+                              className="h-8 w-[116px] gap-1.5"
                               onClick={() => handleRestock(row)}
                               disabled={
                                 evaluateRestocking.isPending && restockMedicineId === row.id
@@ -438,7 +540,9 @@ export function InventoryPage() {
                                 ? "Checking…"
                                 : "Restock"}
                             </Button>
-                          ) : null}
+                          ) : (
+                            <span aria-hidden className="h-8 w-[116px]" />
+                          )}
                           <Button
                             type="button"
                             variant="ghost"
@@ -562,6 +666,24 @@ export function InventoryPage() {
                           ))}
                         </SelectContent>
                       </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="currentStock"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Current stock</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={0}
+                          {...field}
+                          className="bg-surface border-border tabular-nums"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

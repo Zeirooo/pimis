@@ -1,6 +1,5 @@
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { createFileRoute, Link, Navigate, useRouterState } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import {
   Area,
   Line,
@@ -14,16 +13,36 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Download } from "lucide-react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ShoppingCart, TrendingDown, TrendingUp, Download } from "lucide-react";
 import { toast } from "sonner";
-import { useMedicines, usePredictions, usePurchaseOrders } from "@/hooks/use-api";
+import {
+  useEvaluateRestocking,
+  useMedicines,
+  usePredictions,
+  usePurchaseOrders,
+  useSuppliers,
+} from "@/hooks/use-api";
+import { ReportsPage } from "@/pages/Reports";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth";
-import { fadeInUp, listItem, staggerContainer } from "@/lib/motion";
-
-// Hoisted so the two summary-card buttons share one object identity instead
-// of allocating a fresh literal on every render.
-const SUMMARY_CARD_TAP = { scale: 0.98 };
+import { handleApiError } from "@/lib/toast-handlers";
+import type { RestockingEvalResponse } from "@/types/api.types";
 
 export const Route = createFileRoute("/")({
   component: DashboardRoute,
@@ -42,10 +61,28 @@ function DashboardRoute() {
 
 type StockStatus = "Critical" | "Low Stock" | "Overstock" | "Healthy";
 
+interface SparkPoint {
+  v: number;
+}
+
+interface KpiCard {
+  title: string;
+  value: string;
+  delta: string;
+  positive: boolean;
+  sparkColor: string;
+  sparkData: SparkPoint[];
+}
+
 interface ForecastPoint {
   day: string;
   actual: number | null;
   predicted: number;
+}
+
+interface DepletionPoint {
+  status: StockStatus;
+  daysLeft: number;
 }
 
 interface CategoryBar {
@@ -57,11 +94,12 @@ interface CategoryBar {
 
 interface ReportRow {
   sku: string;
-  name: string;
-  form: string;
-  currentStock: number;
-  predictedDemand7d: number;
-  status: StockStatus;
+  medicine: string;
+  stock: number;
+  safetyStock: number;
+  difference: number;
+  status: "Critical" | "Warning";
+  supplier: string;
 }
 
 const FALLBACK_FORECAST_DATA: ForecastPoint[] = [
@@ -77,35 +115,48 @@ const FALLBACK_FORECAST_DATA: ForecastPoint[] = [
   { day: "D10", actual: null, predicted: 533 },
 ];
 
-const STATUS_CONFIG: Record<StockStatus, { label: string; className: string }> = {
+const DEPLETION_DATA: DepletionPoint[] = [
+  { status: "Critical", daysLeft: 5 },
+  { status: "Low Stock", daysLeft: 14 },
+  { status: "Healthy", daysLeft: 36 },
+  { status: "Overstock", daysLeft: 52 },
+];
+
+const STATUS_CONFIG: Record<StockStatus, { label: string; className: string; barColor: string }> = {
   Critical: {
     label: "Critical",
-    className: "bg-critical-soft text-critical border-critical/20",
+    className: "bg-rose-100 text-rose-700 border-rose-200",
+    barColor: "#f43f5e",
   },
   "Low Stock": {
     label: "Low Stock",
-    className: "bg-warning-soft text-warning border-warning/20",
+    className: "bg-amber-100 text-amber-700 border-amber-200",
+    barColor: "#f59e0b",
   },
   Overstock: {
     label: "Overstock",
-    className: "bg-info-soft text-info border-info/20",
+    className: "bg-sky-100 text-sky-700 border-sky-200",
+    barColor: "#0ea5e9",
   },
   Healthy: {
     label: "Healthy",
-    className: "bg-success-soft text-success border-success/20",
+    className: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    barColor: "#10b981",
   },
 };
 
 const CATEGORY_COLORS = ["#10b981", "#0ea5e9", "#f59e0b", "#8b5cf6", "#ef4444", "#14b8a6"];
 
 type DashboardPanel = "restock" | "draftPos" | null;
+type DashboardMode = "stock" | "financial";
 
 type RestockAlertMedicine = {
   id: number;
   name: string;
   currentStock: number;
   safetyStockLevel: number;
-  isCritical: boolean;
+  supplierId: number;
+  status: "Critical" | "Warning";
 };
 
 type DraftPurchaseOrder = {
@@ -118,109 +169,168 @@ type DraftPurchaseOrder = {
 const FALLBACK_TABLE_ROWS: ReportRow[] = [
   {
     sku: "MED-0001",
-    name: "Paracetamol 500mg",
-    form: "Tablet · Box of 100",
-    currentStock: 30,
-    predictedDemand7d: 140,
-    status: "Low Stock",
+    medicine: "Paracetamol 500mg",
+    stock: 30,
+    safetyStock: 20,
+    difference: 10,
+    status: "Warning",
+    supplier: "Metro Pharma",
   },
   {
     sku: "MED-0002",
-    name: "Amoxicillin 500mg",
-    form: "Capsule · Strip of 10",
-    currentStock: 12,
-    predictedDemand7d: 80,
+    medicine: "Amoxicillin 500mg",
+    stock: 12,
+    safetyStock: 20,
+    difference: -8,
     status: "Critical",
-  },
-  {
-    sku: "MED-0003",
-    name: "Metformin 500mg",
-    form: "Tablet · Bottle of 60",
-    currentStock: 220,
-    predictedDemand7d: 150,
-    status: "Overstock",
-  },
-  {
-    sku: "MED-0004",
-    name: "Amlodipine 5mg",
-    form: "Tablet · Strip of 30",
-    currentStock: 75,
-    predictedDemand7d: 70,
-    status: "Healthy",
-  },
-  {
-    sku: "MED-0005",
-    name: "Omeprazole 20mg",
-    form: "Capsule · Box of 50",
-    currentStock: 18,
-    predictedDemand7d: 90,
-    status: "Low Stock",
+    supplier: "Harapan Sehat",
   },
 ];
 
+const RESTOCK_PRIORITY_STATUS_CONFIG: Record<
+  ReportRow["status"],
+  { label: string; className: string; stockClassName: string; differenceClassName: string }
+> = {
+  Critical: {
+    label: "Critical",
+    className: "bg-rose-50 text-rose-500 border-rose-200",
+    stockClassName: "text-rose-500",
+    differenceClassName: "text-rose-500",
+  },
+  Warning: {
+    label: "Warning",
+    className: "bg-orange-100 text-orange-500 border-orange-200",
+    stockClassName: "text-orange-400",
+    differenceClassName: "text-orange-400",
+  },
+};
+
+function SparklineCard({ item, index }: { item: KpiCard; index: number }) {
+  const gradientId = `sparkGrad-${index}`;
+  const unavailable = item.value === "N/A";
+
+  return (
+    <Card className="interactive-card border-border/70 bg-card/95 shadow-sm">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{item.title}</p>
+            <p className="text-2xl font-semibold text-slate-900">{item.value}</p>
+            <div className="inline-flex items-center gap-1 text-xs">
+              {unavailable ? null : item.positive ? (
+                <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
+              ) : (
+                <TrendingDown className="h-3.5 w-3.5 text-amber-600" />
+              )}
+              <span
+                className={
+                  unavailable
+                    ? "text-slate-500"
+                    : item.positive
+                      ? "text-emerald-600"
+                      : "text-amber-600"
+                }
+              >
+                {item.delta}
+              </span>
+            </div>
+          </div>
+          <div className="h-8 w-24">
+            <ResponsiveContainer width="100%" height={32}>
+              <AreaChart data={item.sparkData}>
+                <defs>
+                  <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={item.sparkColor} stopOpacity={0.28} />
+                    <stop offset="95%" stopColor={item.sparkColor} stopOpacity={0.03} />
+                  </linearGradient>
+                </defs>
+                <Area
+                  type="monotone"
+                  dataKey="v"
+                  stroke={item.sparkColor}
+                  fill={`url(#${gradientId})`}
+                  strokeWidth={1.5}
+                  dot={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#ffffff",
+                    borderRadius: "8px",
+                    border: "1px solid #e2e8f0",
+                    color: "#0f172a",
+                    zIndex: 50,
+                  }}
+                  itemStyle={{ color: "#0f172a" }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function renderKpi(item: KpiCard, index: number) {
+  return <SparklineCard key={item.title} item={item} index={index} />;
+}
+
+function renderStatusBar(point: DepletionPoint) {
+  return null;
+}
+
 function renderCategoryProgress(item: CategoryBar) {
+  const formattedValue = Number.isInteger(item.value)
+    ? item.value.toFixed(0)
+    : item.value.toFixed(1);
+
   return (
     <div key={item.name} className="space-y-1.5">
       <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">{item.name}</span>
-        <span className="font-medium text-foreground">{item.value}%</span>
+        <span className="text-slate-500">{item.name}</span>
+        <span className="font-medium text-slate-700">{formattedValue}%</span>
       </div>
-      <div className="h-1.5 rounded-full bg-muted">
+      <div className="h-1.5 rounded-full bg-slate-100">
         <div className="h-1.5 rounded-full" style={item.style} />
       </div>
     </div>
   );
 }
 
-function renderCompactWorklistRow(row: ReportRow) {
-  const config = STATUS_CONFIG[row.status];
-
-  function handleReviewClick() {
-    toast.success(`Review action triggered for ${row.name}.`);
-  }
+function renderRestockPriorityRow(row: ReportRow) {
+  const config = RESTOCK_PRIORITY_STATUS_CONFIG[row.status];
+  const differenceIsPositive = row.difference > 0;
 
   return (
-    <motion.div
-      key={row.sku}
-      variants={listItem}
-      className="flex items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/70 px-3 py-2.5"
-    >
-      <div className="min-w-0 space-y-0.5">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-medium text-foreground">{row.name}</p>
-          <Badge variant="outline" className={config.className}>
-            {config.label}
-          </Badge>
+    <TableRow key={row.sku} className="border-border/60">
+      <TableCell className="border-r border-border/60 pl-6 align-top">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium text-slate-900">{row.medicine}</div>
+          <div className="truncate text-[11px] text-slate-500">{row.sku}</div>
         </div>
-        <p className="truncate text-[11px] text-muted-foreground">
-          {row.sku} · {row.form}
-        </p>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-4 text-right">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Stock</div>
-          <div className="text-sm font-semibold tabular-nums text-foreground">
-            {row.currentStock}
-          </div>
-        </div>
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">7d need</div>
-          <div className="text-sm font-semibold tabular-nums text-foreground">
-            {row.predictedDemand7d}
-          </div>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleReviewClick}
-          className="gap-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <span>Review</span>
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-    </motion.div>
+      </TableCell>
+      <TableCell
+        className={`border-r border-border/60 align-top text-right tabular-nums font-semibold ${config.stockClassName}`}
+      >
+        {row.stock.toLocaleString()}
+      </TableCell>
+      <TableCell className="border-r border-border/60 align-top text-right tabular-nums font-semibold text-slate-900">
+        {row.safetyStock.toLocaleString()}
+      </TableCell>
+      <TableCell
+        className={`border-r border-border/60 align-top pr-4 text-right tabular-nums font-semibold ${config.differenceClassName}`}
+      >
+        {differenceIsPositive
+          ? `▲${row.difference.toLocaleString()}`
+          : `▼${Math.abs(row.difference).toLocaleString()}`}
+      </TableCell>
+      <TableCell className="border-r border-border/60 align-top pl-4">
+        <Badge variant="outline" className={config.className}>
+          {config.label}
+        </Badge>
+      </TableCell>
+      <TableCell className="align-top text-slate-600">{row.supplier}</TableCell>
+    </TableRow>
   );
 }
 
@@ -232,6 +342,20 @@ function formatDisplayDate(isoDate: string): string {
     month: "short",
     year: "numeric",
   });
+}
+
+function formatRelativeTime(timestamp: number | null): string {
+  if (timestamp === null) return "Never";
+
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
+  if (elapsedMinutes < 1) return "Just now";
+  if (elapsedMinutes < 60) return `${elapsedMinutes} min ago`;
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours} hr ago`;
+
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  return `${elapsedDays} day${elapsedDays === 1 ? "" : "s"} ago`;
 }
 
 function SummaryCardLink({
@@ -260,104 +384,121 @@ function DashboardSnapshot({
   totalMedicines,
   lowStockCount,
   pendingDraftPoCount,
+  restockUpdatedAt,
   restockAlertMedicines,
   draftPurchaseOrders,
   expandedPanel,
   onTogglePanel,
+  onRestockMedicine,
 }: {
   totalMedicines: number;
   lowStockCount: number;
   pendingDraftPoCount: number | null;
+  restockUpdatedAt: number | null;
   restockAlertMedicines: RestockAlertMedicine[];
   draftPurchaseOrders: DraftPurchaseOrder[];
   expandedPanel: DashboardPanel;
   onTogglePanel: (panel: DashboardPanel) => void;
+  onRestockMedicine: (medicine: RestockAlertMedicine) => void;
 }) {
   const overlayOpen = expandedPanel !== null;
 
   return (
     <div className="relative">
-      <motion.div
-        variants={staggerContainer}
-        initial="hidden"
-        animate="visible"
-        className="grid gap-3 md:grid-cols-2 lg:grid-cols-12"
-      >
-        <motion.div variants={listItem} className="order-2 md:order-2 lg:col-span-3">
-          <SummaryCardLink
-            to="/inventory"
-            search={{ focus: "all" }}
-            className="border-success/25 bg-success-soft/45"
-          >
-            <div className="flex h-full flex-col gap-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-success">
-                    Medicines
-                  </div>
-                </div>
-                <div className="rounded-full bg-success-soft px-2.5 py-0.5 text-[10px] font-semibold text-success">
-                  Inventory
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-12">
+        <SummaryCardLink
+          to="/inventory"
+          search={{ focus: "all" }}
+          className="order-2 border-emerald-200 bg-emerald-50/55 md:order-2 lg:col-span-3"
+        >
+          <div className="flex h-full flex-col gap-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                  Medicines
                 </div>
               </div>
-
-              <div className="text-[2rem] font-semibold tabular-nums tracking-tight text-foreground lg:text-[2.15rem]">
-                {totalMedicines.toLocaleString()}
+              <div className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                Inventory
               </div>
             </div>
-          </SummaryCardLink>
-        </motion.div>
 
-        <motion.button
-          variants={listItem}
-          whileTap={SUMMARY_CARD_TAP}
+            <div className="text-[2rem] font-semibold tabular-nums tracking-tight text-foreground lg:text-[2.15rem]">
+              {totalMedicines.toLocaleString()}
+            </div>
+          </div>
+        </SummaryCardLink>
+
+        <button
           type="button"
           onClick={() => onTogglePanel(expandedPanel === "restock" ? null : "restock")}
-          className="order-1 rounded-2xl border border-warning/25 bg-warning-soft/45 p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 md:order-1 lg:col-span-6"
+          className="order-1 rounded-2xl border border-amber-200 bg-amber-50/55 p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md md:order-1 lg:col-span-6"
           aria-expanded={expandedPanel === "restock"}
         >
           <div className="flex h-full flex-col gap-3">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-warning">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
                   Restock Alerts
                 </div>
               </div>
-              <div className="rounded-full bg-warning-soft px-2.5 py-0.5 text-[10px] font-semibold text-warning">
-                Needs review
+              <div className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                Action required
               </div>
             </div>
             <div className="text-[2rem] font-semibold tabular-nums tracking-tight text-foreground lg:text-[2.15rem]">
               {lowStockCount.toLocaleString()}
             </div>
-          </div>
-        </motion.button>
 
-        <motion.button
-          variants={listItem}
-          whileTap={SUMMARY_CARD_TAP}
+            <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-amber-100 pt-3 text-[11px] font-medium text-muted-foreground">
+              <span>
+                <span className="font-semibold text-rose-700">
+                  {
+                    restockAlertMedicines.filter((medicine) => medicine.status === "Critical")
+                      .length
+                  }
+                </span>{" "}
+                Critical
+              </span>
+              <span>
+                <span className="font-semibold text-amber-700">
+                  {restockAlertMedicines.filter((medicine) => medicine.status === "Warning").length}
+                </span>{" "}
+                Warning
+              </span>
+              <span>
+                Last updated{" "}
+                <span className="font-semibold text-slate-700">
+                  {formatRelativeTime(restockUpdatedAt)}
+                </span>
+              </span>
+            </div>
+          </div>
+        </button>
+
+        <button
           type="button"
           onClick={() => onTogglePanel(expandedPanel === "draftPos" ? null : "draftPos")}
-          className="order-3 rounded-2xl border border-info/25 bg-info-soft/45 p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 md:order-3 lg:col-span-3"
+          className="order-3 rounded-2xl border border-sky-200 bg-sky-50/55 p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md md:order-3 lg:col-span-3"
           aria-expanded={expandedPanel === "draftPos"}
         >
           <div className="flex h-full flex-col gap-3">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-info">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
                   Draft PO
                 </div>
               </div>
-              <div className="rounded-full bg-info-soft px-2.5 py-0.5 text-[10px] font-semibold text-info">
-                {pendingDraftPoCount === null ? "Unavailable" : "Awaiting"}
+              <div className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[10px] font-semibold text-sky-700">
+                {pendingDraftPoCount === null ? "Unavailable" : "Pending Approval"}
               </div>
             </div>
             <div className="text-[2rem] font-semibold tabular-nums tracking-tight text-foreground lg:text-[2.15rem]">
               {pendingDraftPoCount === null ? "N/A" : pendingDraftPoCount.toLocaleString()}
             </div>
           </div>
-        </motion.button>
-      </motion.div>
+        </button>
+      </div>
 
       {overlayOpen ? (
         <div
@@ -368,7 +509,7 @@ function DashboardSnapshot({
               <div className="p-3 sm:p-3.5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-warning">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
                       Restock Alerts
                     </div>
                   </div>
@@ -387,7 +528,7 @@ function DashboardSnapshot({
                   {restockAlertMedicines.slice(0, 5).map((medicine) => (
                     <div
                       key={medicine.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-warning/15 bg-warning-soft/35 px-3 py-2"
+                      className="flex items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50/35 px-3 py-2"
                     >
                       <div className="min-w-0">
                         <div className="truncate text-[13px] font-medium text-foreground">
@@ -397,10 +538,21 @@ function DashboardSnapshot({
                           Stock {medicine.currentStock} · Safety {medicine.safetyStockLevel}
                         </div>
                       </div>
-                      <div
-                        className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${medicine.isCritical ? "bg-critical-soft text-critical" : "bg-warning-soft text-warning"}`}
-                      >
-                        {medicine.isCritical ? "Critical" : "Below safety"}
+                      <div className="flex shrink-0 items-center gap-2">
+                        <div
+                          className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${medicine.status === "Critical" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}
+                        >
+                          {medicine.status}
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-9 gap-2 rounded-lg border border-slate-200 bg-slate-100 px-4 text-slate-700 shadow-sm hover:bg-slate-200 hover:text-slate-900"
+                          onClick={() => onRestockMedicine(medicine)}
+                        >
+                          <ShoppingCart className="h-4 w-4" />
+                          Restock
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -423,7 +575,7 @@ function DashboardSnapshot({
               <div className="p-3 sm:p-3.5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
                       Draft Purchase Orders
                     </div>
                   </div>
@@ -442,7 +594,7 @@ function DashboardSnapshot({
                   {draftPurchaseOrders.slice(0, 5).map((po) => (
                     <div
                       key={po.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/75 px-3 py-2"
+                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/75 px-3 py-2"
                     >
                       <div className="min-w-0">
                         <div className="truncate text-[13px] font-medium text-foreground">
@@ -479,18 +631,33 @@ function DashboardSnapshot({
 
 function DashboardPage() {
   const [expandedPanel, setExpandedPanel] = useState<DashboardPanel>(null);
+  const [dashboardMode, setDashboardMode] = useState<DashboardMode>("stock");
+  const [restockDialogOpen, setRestockDialogOpen] = useState(false);
+  const [restockEvaluation, setRestockEvaluation] = useState<RestockingEvalResponse | null>(null);
+  const [restockMedicineId, setRestockMedicineId] = useState<number | null>(null);
+  const [restockSupplierId, setRestockSupplierId] = useState<string>("");
+  const [restockUpdatedAt, setRestockUpdatedAt] = useState<number | null>(null);
   const {
     data: medicines = [],
     isLoading: medicinesLoading,
     isError: medicinesError,
     refetch: refetchMedicines,
   } = useMedicines();
+  const { data: suppliers = [] } = useSuppliers();
   const { data: purchaseOrders = [], isError: purchaseOrdersError } = usePurchaseOrders();
+  const evaluateRestocking = useEvaluateRestocking();
+
+  useEffect(() => {
+    if (medicines.length > 0) {
+      setRestockUpdatedAt(Date.now());
+    }
+  }, [medicines]);
 
   const totalMedicines = medicines.length;
-  const lowStockCount = medicines.filter(
-    (medicine) => medicine.current_stock <= medicine.safety_stock_level,
-  ).length;
+  const supplierNameById = useMemo(
+    () => new Map<number, string>(suppliers.map((supplier) => [supplier.id, supplier.name])),
+    [suppliers],
+  );
   const pendingReviewPurchaseOrders = useMemo(
     () =>
       purchaseOrdersError
@@ -504,27 +671,35 @@ function DashboardPage() {
     [purchaseOrders, purchaseOrdersError],
   );
 
-  const pendingDraftPoCount = purchaseOrdersError ? null : pendingReviewPurchaseOrders.length;
-
   const restockAlertMedicines = useMemo(
     () =>
       medicines
-        .filter((medicine) => medicine.current_stock <= medicine.safety_stock_level)
-        .sort((left, right) => {
-          const leftCritical = left.current_stock < left.safety_stock_level * 0.5;
-          const rightCritical = right.current_stock < right.safety_stock_level * 0.5;
-          if (leftCritical !== rightCritical) return leftCritical ? -1 : 1;
-          return left.current_stock - right.current_stock;
+        .filter((medicine) => {
+          const currentGap = medicine.current_stock - medicine.safety_stock_level;
+          return currentGap <= 15;
         })
-        .map((medicine) => ({
-          id: medicine.id,
-          name: medicine.name,
-          currentStock: medicine.current_stock,
-          safetyStockLevel: medicine.safety_stock_level,
-          isCritical: medicine.current_stock < medicine.safety_stock_level * 0.5,
-        })),
+        .sort((left, right) => {
+          const leftCritical = left.current_stock < left.safety_stock_level;
+          const rightCritical = right.current_stock < right.safety_stock_level;
+          if (leftCritical !== rightCritical) return leftCritical ? -1 : 1;
+
+          const leftGap = left.current_stock - left.safety_stock_level;
+          const rightGap = right.current_stock - right.safety_stock_level;
+          return leftGap - rightGap;
+        })
+        .map(
+          (medicine): RestockAlertMedicine => ({
+            id: medicine.id,
+            name: medicine.name,
+            currentStock: medicine.current_stock,
+            safetyStockLevel: medicine.safety_stock_level,
+            supplierId: medicine.supplier_id,
+            status: medicine.current_stock < medicine.safety_stock_level ? "Critical" : "Warning",
+          }),
+        ),
     [medicines],
   );
+  const lowStockCount = restockAlertMedicines.length;
 
   const targetMedicineId = medicines[0]?.id ?? null;
   const { data: predictions = [] } = usePredictions(targetMedicineId);
@@ -558,7 +733,7 @@ function DashboardPage() {
 
     return Array.from(categoryTotals.entries())
       .map(([name, stock], index) => {
-        const value = Math.round((stock / safeTotal) * 100);
+        const value = (stock / safeTotal) * 100;
         const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
 
         return {
@@ -578,27 +753,37 @@ function DashboardPage() {
     }
 
     return medicines
-      .filter((medicine) => medicine.current_stock <= medicine.safety_stock_level)
+      .filter((medicine) => medicine.current_stock - medicine.safety_stock_level <= 15)
       .sort((left, right) => {
-        const leftCritical = left.current_stock < left.safety_stock_level * 0.5;
-        const rightCritical = right.current_stock < right.safety_stock_level * 0.5;
+        const leftCritical = left.current_stock < left.safety_stock_level;
+        const rightCritical = right.current_stock < right.safety_stock_level;
         if (leftCritical !== rightCritical) return leftCritical ? -1 : 1;
-        return left.current_stock - right.current_stock;
+
+        const leftGap = left.current_stock - left.safety_stock_level;
+        const rightGap = right.current_stock - right.safety_stock_level;
+        return leftGap - rightGap;
       })
-      .map((medicine) => ({
-        sku: medicine.sku_code,
-        name: medicine.name,
-        form: medicine.unit_measurement,
-        currentStock: medicine.current_stock,
-        predictedDemand7d: Math.max(
+      .map((medicine) => {
+        const predictedDemand7d = Math.max(
           medicine.safety_stock_level,
           Math.round(medicine.current_stock * 0.75 + medicine.safety_stock_level * 0.5),
-        ),
-        status: (medicine.current_stock < medicine.safety_stock_level * 0.5
-          ? "Critical"
-          : "Low Stock") as StockStatus,
-      }));
-  }, [medicines]);
+        );
+        const etaDays = Math.max(
+          1,
+          Math.ceil(medicine.current_stock / Math.max(predictedDemand7d / 7, 1)),
+        );
+
+        return {
+          sku: medicine.sku_code,
+          medicine: medicine.name,
+          stock: medicine.current_stock,
+          safetyStock: medicine.safety_stock_level,
+          difference: medicine.current_stock - medicine.safety_stock_level,
+          status: medicine.current_stock < medicine.safety_stock_level ? "Critical" : "Warning",
+          supplier: supplierNameById.get(medicine.supplier_id) ?? "Unassigned supplier",
+        };
+      });
+  }, [medicines, supplierNameById]);
 
   function handleExportInsights() {
     toast.success("Restocking insights export is queued.");
@@ -608,9 +793,103 @@ function DashboardPage() {
     void refetchMedicines();
   }
 
+  function handleRestockMedicine(medicine: RestockAlertMedicine) {
+    setRestockMedicineId(medicine.id);
+    setRestockSupplierId(String(medicine.supplierId));
+    evaluateRestocking.mutate(
+      { medicineId: medicine.id },
+      {
+        onSuccess: (result) => {
+          setRestockEvaluation(result);
+          setRestockDialogOpen(true);
+          if (result.status === "Low Stock") {
+            toast.info(
+              `${result.medicine_name} is low stock. Choose a supplier to create the draft PO.`,
+            );
+            return;
+          }
+          toast.info(`${result.medicine_name} is still above the restock threshold.`);
+        },
+        onError: (err) => handleApiError("Evaluate restocking", err),
+      },
+    );
+  }
+
+  function handleRestockDialogOpenChange(open: boolean) {
+    setRestockDialogOpen(open);
+    if (!open) {
+      setRestockEvaluation(null);
+      setRestockMedicineId(null);
+      setRestockSupplierId("");
+    }
+  }
+
+  function handleCreateRestockPo() {
+    if (!restockEvaluation) return;
+    const medicineId = restockMedicineId ?? restockEvaluation.medicine_id;
+    const supplierId = Number(restockSupplierId);
+    if (!medicineId || !supplierId) return;
+
+    window.location.assign(
+      `/purchase-orders?draftMedicineId=${medicineId}&supplierId=${supplierId}`,
+    );
+  }
+
+  const modeSwitcher = (
+    <div className="inline-flex rounded-full bg-[#d9f3df] p-1 shadow-sm">
+      <div className="relative grid min-w-[280px] grid-cols-2 rounded-full">
+        <span
+          aria-hidden
+          className={[
+            "absolute inset-y-0 left-0 w-1/2 rounded-full bg-white shadow-[0_10px_24px_rgba(34,197,94,0.18)] transition-transform duration-300 ease-out",
+            dashboardMode === "financial" ? "translate-x-full" : "translate-x-0",
+          ].join(" ")}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => setDashboardMode("stock")}
+          className={[
+            "relative z-10 rounded-full px-5 transition-all duration-300 hover:bg-transparent hover:text-current",
+            dashboardMode === "stock"
+              ? "bg-white/95 font-semibold text-[#0f5132] shadow-[0_4px_12px_rgba(15,81,50,0.18)]"
+              : "text-black/70",
+          ].join(" ")}
+        >
+          Stock page
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => setDashboardMode("financial")}
+          className={[
+            "relative z-10 rounded-full px-5 transition-all duration-300 hover:bg-transparent hover:text-current",
+            dashboardMode === "financial"
+              ? "bg-white/95 font-semibold text-[#0f5132] shadow-[0_4px_12px_rgba(15,81,50,0.18)]"
+              : "text-black/70",
+          ].join(" ")}
+        >
+          Financial page
+        </Button>
+      </div>
+    </div>
+  );
+
+  if (dashboardMode === "financial") {
+    return (
+      <div className="space-y-4">
+        {modeSwitcher}
+        <ReportsPage />
+      </div>
+    );
+  }
+
   if (medicinesLoading) {
     return (
       <div className="space-y-6">
+        {modeSwitcher}
         <div className="rounded-[1.75rem] border border-border/60 bg-card/90 p-6 shadow-sm">
           <div className="grid gap-6 lg:grid-cols-[1.25fr_0.95fr]">
             <div className="space-y-4">
@@ -639,28 +918,35 @@ function DashboardPage() {
 
   if (medicinesError) {
     return (
-      <Card className="border-border/70 bg-card/95 shadow-sm">
-        <CardContent className="flex min-h-[280px] flex-col items-center justify-center gap-4 p-8 text-center">
-          <div className="space-y-2">
-            <h2 className="text-xl font-semibold text-foreground">Inventory data failed to load</h2>
-            <p className="max-w-lg text-sm text-muted-foreground">
-              Check the backend connection or seed the demo database, then refresh the page.
-            </p>
-          </div>
-          <Button type="button" onClick={handleRetryConnection} variant="outline">
-            Retry connection
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        {modeSwitcher}
+        <Card className="border-border/70 bg-card/95 shadow-sm">
+          <CardContent className="flex min-h-[280px] flex-col items-center justify-center gap-4 p-8 text-center">
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold text-foreground">
+                Inventory data failed to load
+              </h2>
+              <p className="max-w-lg text-sm text-muted-foreground">
+                Check the backend connection or seed the demo database, then refresh the page.
+              </p>
+            </div>
+            <Button type="button" onClick={handleRetryConnection} variant="outline">
+              Retry connection
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      {modeSwitcher}
       <DashboardSnapshot
         totalMedicines={totalMedicines}
         lowStockCount={lowStockCount}
-        pendingDraftPoCount={pendingDraftPoCount}
+        pendingDraftPoCount={pendingReviewPurchaseOrders.length}
+        restockUpdatedAt={restockUpdatedAt}
         restockAlertMedicines={restockAlertMedicines}
         draftPurchaseOrders={pendingReviewPurchaseOrders.map((po) => ({
           id: po.id,
@@ -670,20 +956,15 @@ function DashboardPage() {
         }))}
         expandedPanel={expandedPanel}
         onTogglePanel={setExpandedPanel}
+        onRestockMedicine={handleRestockMedicine}
       />
 
-      <motion.div
-        variants={staggerContainer}
-        initial="hidden"
-        animate="visible"
-        className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]"
-      >
-        <motion.div variants={fadeInUp}>
+      <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
         <Card className="interactive-card overflow-hidden border-border/70 bg-card/95 shadow-sm">
           <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
             <div>
-              <CardTitle className="text-base font-semibold text-foreground">
-                Forecast pressure
+              <CardTitle className="text-base font-semibold text-slate-900">
+                Stock Consumption Forecast
               </CardTitle>
             </div>
             <div className="rounded-full border border-border/70 bg-surface px-3 py-1 text-[11px] font-medium text-muted-foreground">
@@ -743,7 +1024,7 @@ function DashboardPage() {
             <div className="space-y-2">
               <div className="flex items-end justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-foreground">Category stock share</h3>
+                  <h3 className="text-sm font-semibold text-slate-900">Category stock share</h3>
                 </div>
               </div>
 
@@ -760,16 +1041,14 @@ function DashboardPage() {
             </div>
           </CardContent>
         </Card>
-        </motion.div>
 
-        <motion.div variants={fadeInUp}>
         <Card
           className="interactive-card flex flex-col overflow-hidden border-border/70 bg-card/95 shadow-sm"
           id="restocking-worklist"
         >
           <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
             <div>
-              <CardTitle className="text-base font-semibold text-foreground">
+              <CardTitle className="text-base font-semibold text-slate-900">
                 Restocking priorities
               </CardTitle>
             </div>
@@ -780,22 +1059,128 @@ function DashboardPage() {
               className="gap-1.5 rounded-full border-border/80 bg-white/70 hover:bg-white"
             >
               <Download className="h-3.5 w-3.5" />
-              Export
             </Button>
           </CardHeader>
-          <CardContent className="max-h-[22rem] space-y-2 overflow-y-auto pt-1 pr-1">
-            <motion.div
-              variants={staggerContainer}
-              initial="hidden"
-              animate="visible"
-              className="space-y-2"
-            >
-              {worklistRows.map(renderCompactWorklistRow)}
-            </motion.div>
+          <CardContent className="max-h-[22rem] overflow-auto pt-1 pr-1">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-border/60 hover:bg-transparent">
+                  <TableHead className="border-r border-border/60 pl-6 font-semibold text-slate-500">
+                    Medicine
+                  </TableHead>
+                  <TableHead className="border-r border-border/60 text-right font-semibold text-slate-500">
+                    Stock
+                  </TableHead>
+                  <TableHead className="border-r border-border/60 text-right font-semibold text-slate-500">
+                    Safety Stock
+                  </TableHead>
+                  <TableHead className="border-r border-border/60 text-right font-semibold text-slate-500">
+                    Difference
+                  </TableHead>
+                  <TableHead className="border-r border-border/60 font-semibold text-slate-500">
+                    Status
+                  </TableHead>
+                  <TableHead className="font-semibold text-slate-500">Supplier</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>{worklistRows.map(renderRestockPriorityRow)}</TableBody>
+            </Table>
           </CardContent>
         </Card>
-        </motion.div>
-      </motion.div>
+      </div>
+
+      <Dialog open={restockDialogOpen} onOpenChange={handleRestockDialogOpenChange}>
+        <DialogContent className="border-border-strong bg-background sm:max-w-lg">
+          {restockEvaluation ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Draft AI review</DialogTitle>
+                <DialogDescription>
+                  Review the AI draft before creating the purchase order for manager approval.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Medicine</p>
+                  <p className="font-semibold text-foreground">{restockEvaluation.medicine_name}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Current stock</p>
+                    <p className="font-medium text-foreground">
+                      {restockEvaluation.current_stock.toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Safety stock</p>
+                    <p className="font-medium text-foreground">
+                      {medicines
+                        .find((m) => m.id === restockEvaluation.medicine_id)
+                        ?.safety_stock_level.toLocaleString() ?? "-"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Predicted demand</p>
+                    <p className="font-medium text-foreground">
+                      {restockEvaluation.predicted_demand.toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Recommended PO qty</p>
+                    <p className="font-medium text-foreground">
+                      {restockEvaluation.recommended_po_qty.toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+                <div className="rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
+                  <p className="mb-1 font-medium text-foreground">Draft AI summary</p>
+                  <p>{restockEvaluation.draft_ai_summary ?? "No summary available."}</p>
+                  {restockEvaluation.draft_ai_factors.length ? (
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      {restockEvaluation.draft_ai_factors.map((factor) => (
+                        <li key={factor}>{factor}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Supplier</p>
+                  <select
+                    value={restockSupplierId}
+                    onChange={(event) => setRestockSupplierId(event.target.value)}
+                    className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none"
+                  >
+                    {suppliers.map((supplier) => (
+                      <option key={supplier.id} value={String(supplier.id)}>
+                        {supplier.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleRestockDialogOpenChange(false)}
+                >
+                  Close
+                </Button>
+                <Button type="button" onClick={handleCreateRestockPo} disabled={!restockSupplierId}>
+                  Open Purchase Orders
+                </Button>
+                <Button asChild type="button" variant="secondary">
+                  <Link to="/purchase-orders">View Purchase Orders</Link>
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <div className="py-6 text-center text-sm text-muted-foreground">Checking stock...</div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

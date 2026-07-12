@@ -30,7 +30,12 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { useSuppliers as useApiSuppliers, useCreateMedicine, useMedicines } from "@/hooks/use-api";
+import {
+  useSuppliers as useApiSuppliers,
+  useCreateMedicine,
+  useMedicines,
+  useUpdateSupplier,
+} from "@/hooks/use-api";
 
 export type SupplierCategory = "Distributor" | "Manufacturer";
 
@@ -145,6 +150,7 @@ export function SuppliersPage() {
   const { data: apiSuppliers = [] } = useApiSuppliers();
   const { data: medicines = [] } = useMedicines();
   const createMedicine = useCreateMedicine();
+  const updateSupplier = useUpdateSupplier();
 
   const [isCreateMedOpen, setIsCreateMedOpen] = useState(false);
   const [medSku, setMedSku] = useState("");
@@ -158,20 +164,45 @@ export function SuppliersPage() {
   const [addForm, setAddForm] = useState<AddSupplierForm>(emptyAddForm);
 
   const displayedSuppliers = useMemo(() => {
-    // Prefer backend suppliers when available, map to local Supplier shape
-    if (apiSuppliers.length > 0) {
-      return apiSuppliers.map((s) => ({
-        id: String(s.id),
-        companyName: s.name || "",
-        contactPerson: (s as any).contact_person || "",
-        phone: (s as any).phone || "",
-        email: (s as any).email || "",
+    const merged = [...suppliers];
+    const findMatchIndex = (name: string) =>
+      merged.findIndex((supplier) => {
+        const a = supplier.companyName.toLowerCase();
+        const b = name.toLowerCase();
+        return a === b || a.includes(b) || b.includes(a);
+      });
+
+    for (const apiSupplier of apiSuppliers) {
+      const mapped = {
+        id: String(apiSupplier.id),
+        companyName: apiSupplier.name || "",
+        contactPerson: apiSupplier.contact_person || "",
+        phone: apiSupplier.phone || "",
+        email: apiSupplier.email || "",
         category: "Distributor" as SupplierCategory,
-        status: "Active" as SupplierStatus,
+        status:
+          apiSupplier.status === "Inactive"
+            ? ("Inactive" as SupplierStatus)
+            : ("Active" as SupplierStatus),
         address: "",
-      }));
+      };
+
+      const matchIndex = findMatchIndex(mapped.companyName);
+      if (matchIndex >= 0) {
+        merged[matchIndex] = {
+          ...merged[matchIndex],
+          ...mapped,
+          email: mapped.email || merged[matchIndex].email,
+          contactPerson: mapped.contactPerson || merged[matchIndex].contactPerson,
+          phone: mapped.phone || merged[matchIndex].phone,
+          status: merged[matchIndex].status,
+        };
+      } else {
+        merged.push(mapped);
+      }
     }
-    return suppliers;
+
+    return merged;
   }, [apiSuppliers, suppliers]);
 
   const filteredSuppliers = useMemo(() => {
@@ -258,6 +289,37 @@ export function SuppliersPage() {
     }
   }
 
+  async function handleSupplierStatusChange(status: Extract<SupplierStatus, "Active" | "Inactive">) {
+    if (!selectedSupplier) return;
+
+    const namesMatch = (a: string, b: string) => {
+      const left = a.toLowerCase();
+      const right = b.toLowerCase();
+      return left === right || left.includes(right) || right.includes(left);
+    };
+
+    setSelectedSupplier({ ...selectedSupplier, status });
+    setSuppliers((prev) =>
+      prev.map((supplier) =>
+        namesMatch(supplier.companyName, selectedSupplier.companyName)
+          ? { ...supplier, status }
+          : supplier,
+      ),
+    );
+
+    const supplierId = Number(selectedSupplier.id);
+    if (Number.isFinite(supplierId)) {
+      try {
+        await updateSupplier.mutateAsync({ id: supplierId, payload: { status } });
+      } catch (err) {
+        toast.error("Failed to update supplier status.");
+        return;
+      }
+    }
+
+    toast.success(`${selectedSupplier.companyName} marked ${status.toLowerCase()}.`);
+  }
+
   function handleSaveSupplier() {
     if (
       !addForm.companyName.trim() ||
@@ -278,7 +340,7 @@ export function SuppliersPage() {
       phone: addForm.phone.trim(),
       email: addForm.email.trim(),
       category: addForm.category,
-      status: "On Review",
+      status: "Active",
       address: addForm.address.trim(),
     };
 
@@ -312,7 +374,7 @@ export function SuppliersPage() {
         <CardHeader className="border-b border-border pb-4">
           <CardTitle className="text-lg font-bold tracking-tight">Registered vendors</CardTitle>
           <CardDescription>
-            {filteredSuppliers.length} of {suppliers.length} suppliers
+            {filteredSuppliers.length} of {displayedSuppliers.length} suppliers
             {searchQuery.trim() ? ` matching “${searchQuery.trim()}”` : ""}.
           </CardDescription>
         </CardHeader>
@@ -510,7 +572,7 @@ export function SuppliersPage() {
       </Dialog>
 
       <Dialog open={detailsOpen} onOpenChange={handleDetailsDialogChange}>
-        <DialogContent className="border-border-strong bg-background sm:max-w-md">
+        <DialogContent className="max-h-[min(92vh,760px)] overflow-y-auto border-border-strong bg-background sm:max-w-md">
           {selectedSupplier ? (
             <>
               <DialogHeader>
@@ -562,7 +624,23 @@ export function SuppliersPage() {
                   </Badge>
                   <span className="text-muted-foreground">·</span>
                   <span className="text-muted-foreground">Status</span>
-                  <StatusBadge status={selectedSupplier.status} />
+                  <Select
+                    value={selectedSupplier.status === "Inactive" ? "Inactive" : "Active"}
+                    disabled={updateSupplier.isPending}
+                    onValueChange={(value) =>
+                      handleSupplierStatusChange(
+                        value as Extract<SupplierStatus, "Active" | "Inactive">,
+                      )
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-[116px] border-border bg-background text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="z-[70]">
+                      <SelectItem value="Active">Active</SelectItem>
+                      <SelectItem value="Inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="mt-3 flex gap-2">
                   <Button type="button" size="sm" onClick={openCreateMedForSelected}>
@@ -658,7 +736,7 @@ export function SuppliersPage() {
         </DialogContent>
       </Dialog>
       <Dialog open={isCreateMedOpen} onOpenChange={setIsCreateMedOpen}>
-        <DialogContent className="border-border-strong bg-background sm:max-w-lg">
+        <DialogContent className="max-h-[min(90vh,720px)] overflow-y-auto border-border-strong bg-background sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Create medicine</DialogTitle>
             <DialogDescription>Add a medicine record linked to this supplier.</DialogDescription>

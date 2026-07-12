@@ -29,10 +29,15 @@ class SupplierBase(BaseModel):
     contact_person: str | None = None
     email: str | None = None
     phone: str | None = None
+    status: str = "Active"
 
 
 class SupplierCreate(SupplierBase):
     pass
+
+
+class SupplierUpdate(BaseModel):
+    status: str | None = None
 
 
 class SupplierResponse(SupplierBase):

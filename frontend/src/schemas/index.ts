@@ -14,6 +14,7 @@ export const medicineSchema = z.object({
   sku: z.string().min(3, "Required"),
   category: z.string().min(1, "Select a category"),
   unit: z.string().min(1, "Select a unit"),
+  currentStock: z.coerce.number().int().min(0, "Must be ≥ 0"),
   safetyStock: z.coerce.number().int().min(0, "Must be ≥ 0"),
 });
 
